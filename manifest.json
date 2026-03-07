@@ -1,0 +1,35 @@
+{
+    "manifest_version": 2.0,
+    "id": "turnos-noc-report",
+    "name": "Relatório Repasse de Plantão",
+    "version": "2.0.0",
+    "namespace": "TurnosNocReport",
+    "author": "NOC Team",
+    "description": "Módulo nativo para relatório de repasse de plantão NOC com métricas MTTA, análise de ruído, presença e diário de bordo.",
+    "actions": {
+        "turnos.report.view": {
+            "class": "TurnosReportView",
+            "view": "turnos.report.view"
+        },
+        "turnos.report.notes.save": {
+            "class": "TurnosNotesSave",
+            "view": null
+        },
+        "turnos.report.notes.get": {
+            "class": "TurnosNotesGet",
+            "view": null
+        },
+        "turnos.report.pdf": {
+            "class": "TurnosReportPdf",
+            "view": "turnos.report.view"
+        }
+    },
+    "assets": {
+        "css": [
+            "turnos.report.css"
+        ],
+        "js": [
+            "class.turnos.report.js"
+        ]
+    }
+}
