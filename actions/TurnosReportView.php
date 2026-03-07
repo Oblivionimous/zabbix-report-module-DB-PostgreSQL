@@ -92,12 +92,13 @@ class TurnosReportView extends CController {
                 CASE WHEN EXISTS (SELECT 1 FROM acknowledges ak WHERE ak.eventid=e.eventid) THEN 1 ELSE 0 END AS has_ack
             FROM events e
             LEFT JOIN event_recovery er ON er.eventid = e.eventid
+            LEFT JOIN events re ON re.eventid = er.r_eventid
             INNER JOIN triggers t ON t.triggerid=e.objectid
             INNER JOIN functions f ON f.triggerid=t.triggerid
             INNER JOIN items i ON i.itemid=f.itemid
             INNER JOIN hosts h ON h.hostid=i.hostid
             WHERE e.source=0 AND e.object=0 AND e.value=1
-              AND e.clock < $ts_start AND er.r_eventid IS NULL
+              AND e.clock < $ts_start AND (er.r_eventid IS NULL OR re.clock > $ts_start)
             GROUP BY e.eventid ORDER BY e.severity DESC, e.clock ASC LIMIT 50";
         $res = $db->query($sql); $rows = [];
         while ($r = $res->fetch_assoc()) $rows[] = $r;
@@ -154,11 +155,13 @@ class TurnosReportView extends CController {
     }
 
     private function queryEventTotals(\mysqli $db, int $s, int $e): array {
-        $sql = "SELECT COUNT(*) AS total,
+        $sql = "SELECT COUNT(DISTINCT ev.eventid) AS total,
                 SUM(CASE WHEN ev.severity>=4 THEN 1 ELSE 0 END) AS critical,
                 SUM(CASE WHEN ev.severity=3 THEN 1 ELSE 0 END) AS average,
                 SUM(CASE WHEN ev.severity<=2 THEN 1 ELSE 0 END) AS low
-            FROM events ev WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $s AND $e";
+            FROM events ev
+            INNER JOIN triggers t ON t.triggerid=ev.objectid
+            WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $s AND $e";
         return $db->query($sql)->fetch_assoc() ?: ['total'=>0,'critical'=>0,'average'=>0,'low'=>0];
     }
 
@@ -207,9 +210,13 @@ class TurnosReportView extends CController {
     private function queryCalendarHeatmap(\mysqli $db): array {
         $ts30 = strtotime('-30 days 00:00:00');
         $tsNow = time();
-        $sql = "SELECT DATE(FROM_UNIXTIME(ev.clock)) AS dia, COUNT(*) AS cnt,
+        // Calculate timezone offset in seconds to align MySQL exact day grouping with PHP
+        $tzOffset = date('Z');
+        
+        $sql = "SELECT DATE(FROM_UNIXTIME(ev.clock + $tzOffset)) AS dia, COUNT(DISTINCT ev.eventid) AS cnt,
                 SUM(CASE WHEN ev.severity>=4 THEN 1 ELSE 0 END) AS critical
             FROM events ev
+            INNER JOIN triggers t ON t.triggerid=ev.objectid
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1
               AND ev.clock BETWEEN $ts30 AND $tsNow
             GROUP BY dia ORDER BY dia ASC";

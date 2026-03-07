@@ -77,9 +77,10 @@ class TurnosReportPdf extends CController {
             h.host,h.name AS host_name,($ts_start-e.clock) AS age_seconds,
             CASE WHEN EXISTS(SELECT 1 FROM acknowledges ak WHERE ak.eventid=e.eventid) THEN 1 ELSE 0 END AS has_ack
             FROM events e LEFT JOIN event_recovery er ON er.eventid=e.eventid
+            LEFT JOIN events re ON re.eventid=er.r_eventid
             INNER JOIN triggers t ON t.triggerid=e.objectid INNER JOIN functions f ON f.triggerid=t.triggerid
             INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
-            WHERE e.source=0 AND e.object=0 AND e.value=1 AND e.clock<$ts_start AND er.r_eventid IS NULL
+            WHERE e.source=0 AND e.object=0 AND e.value=1 AND e.clock<$ts_start AND (er.r_eventid IS NULL OR re.clock>$ts_start)
             GROUP BY e.eventid ORDER BY e.severity DESC LIMIT 50");
 
         $unacked = $this->q($db, "SELECT ev.eventid,ev.clock,ev.severity,t.description AS trigger_desc,h.host,h.name AS host_name
@@ -100,11 +101,12 @@ class TurnosReportPdf extends CController {
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
             GROUP BY t.triggerid ORDER BY t.priority DESC,event_count DESC LIMIT 5");
 
-        $totals = $db->query("SELECT COUNT(*) AS total,
+        $totals = $db->query("SELECT COUNT(DISTINCT ev.eventid) AS total,
             SUM(CASE WHEN ev.severity>=4 THEN 1 ELSE 0 END) AS critical,
             SUM(CASE WHEN ev.severity=3 THEN 1 ELSE 0 END) AS average,
             SUM(CASE WHEN ev.severity<=2 THEN 1 ELSE 0 END) AS low
-            FROM events ev WHERE ev.source=0 AND ev.object=0 AND ev.value=1
+            FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid
+            WHERE ev.source=0 AND ev.object=0 AND ev.value=1
             AND ev.clock BETWEEN $ts_start AND $ts_end")->fetch_assoc() ?: ['total'=>0,'critical'=>0,'average'=>0,'low'=>0];
 
         $notes = $this->qSafe($db, "SELECT analyst_name,notes,created_at FROM custom_shift_notes
