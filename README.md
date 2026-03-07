@@ -6,18 +6,17 @@ Módulo frontend **100% nativo** do Zabbix 6.x/7.x para relatório automático d
 
 | Funcionalidade | Descrição |
 |---|---|
-| **KPIs** | Total de eventos, críticos, MTTA global, sem ACK, herdados, analistas online |
-| **MTTA por Analista** | Tempo médio de reconhecimento por usuário com classificação de performance |
-| **MTTA por Hora** | Gráfico de linha mostrando evolução do MTTA ao longo do dia |
-| **Distribuição por Severidade** | Gráfico doughnut com breakdown por nível de severidade |
-| **Heatmap 30 Dias** | Calendário visual com volume de alertas por dia |
-| **Alertas Herdados** | Problemas ativos que vieram do turno anterior |
-| **Alertas Sem ACK** | Alertas que não foram reconhecidos no período |
-| **Top 5 Hosts** | Hosts com maior volume de alertas |
-| **Top 5 Triggers** | Triggers mais frequentes |
-| **Presença de Analistas** | Tempo online dos analistas no período (via cron) |
-| **Diário de Bordo** | Registro manual de ocorrências do turno |
-| **Export PDF** | Versão limpa para impressão (Ctrl+P) |
+| **KPIs Interativos** | Total de eventos, críticos, MTTA, plantão herdado, analistas, com descrições detalhadas (`hover`) e drill-down |
+| **MTTA por Analista** | Tempo médio de reconhecimento por usuário com classificação de performance em Horas/Minutos |
+| **MTTA por Hora** | Gráfico de barras proporcional (escala 60m) do cálculo do MTTA global |
+| **Distribuição Severidade** | Toggle rápido entre gráfico de Doughnut e Barras por nível de criticidade |
+| **Heatmap 30 Dias** | Calendário visual elegante estilo GitHub do volume de alertas/plantão |
+| **Alertas Herdados** | Problemas passados persistentes no novo turno (Navegáveis) |
+| **Alertas Sem ACK** | Tabela rápida de navegação de alertas órfãos |
+| **Top Hosts/Triggers** | Listagem expansível (Top 5, 10, Todos) com navegação limpa pro Histórico de Problemas |
+| **Zabbix Dark Theme** | Herança CSS nativa instantânea entre sub-temas nativos do Zabbix (Blue/Black) |
+| **Diário de Bordo** | Operações limpas AJAX de log para turno atuante sem screen flashing |
+| **Export/Reload** | Geração PDF compatível ou soft-reload no Widget Central de Hora |
 
 ## Pré-requisitos
 

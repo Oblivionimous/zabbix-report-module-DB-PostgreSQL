@@ -35,6 +35,9 @@ class TurnosReportPdf extends CController {
             case 'manha': return [strtotime("$date 07:00:00"), strtotime("$date 12:59:59")];
             case 'tarde': return [strtotime("$date 13:00:00"), strtotime("$date 18:59:59")];
             case 'noite':
+                if ($date === date('Y-m-d') && (int)date('H') < 7) {
+                    $date = date('Y-m-d', strtotime('-1 day', strtotime($date)));
+                }
                 $next = date('Y-m-d', strtotime("$date +1 day"));
                 return [strtotime("$date 19:00:00"), strtotime("$next 06:59:59")];
             default: return [strtotime("$date 00:00:00"), strtotime("$date 23:59:59")];
@@ -58,6 +61,11 @@ class TurnosReportPdf extends CController {
     protected function doAction(): void {
         $date  = $this->getInput('date', date('Y-m-d'));
         $shift = $this->getInput('shift', '24h');
+        
+        $limitStr = $this->getInput('limit', '5');
+        $limit = $limitStr === 'all' ? 0 : (int)$limitStr;
+        $limitClause = $limit > 0 ? "LIMIT $limit" : "";
+
         [$ts_start, $ts_end] = $this->getShiftBounds($date, $shift);
 
         $db = $this->getDb();
@@ -94,12 +102,12 @@ class TurnosReportPdf extends CController {
             FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid INNER JOIN functions f ON f.triggerid=t.triggerid
             INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
-            GROUP BY h.hostid ORDER BY event_count DESC LIMIT 5");
+            GROUP BY h.hostid ORDER BY event_count DESC $limitClause");
 
         $top_triggers = $this->q($db, "SELECT t.description,t.priority AS severity,COUNT(DISTINCT ev.eventid) AS event_count
             FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
-            GROUP BY t.triggerid ORDER BY t.priority DESC,event_count DESC LIMIT 5");
+            GROUP BY t.triggerid ORDER BY t.priority DESC,event_count DESC $limitClause");
 
         $totals = $db->query("SELECT COUNT(DISTINCT ev.eventid) AS total,
             SUM(CASE WHEN ev.severity>=4 THEN 1 ELSE 0 END) AS critical,

@@ -56,6 +56,9 @@ class TurnosReportView extends CController {
             case 'tarde':
                 return [strtotime("$date 13:00:00"), strtotime("$date 18:59:59")];
             case 'noite':
+                if ($date === date('Y-m-d') && (int)date('H') < 7) {
+                    $date = date('Y-m-d', strtotime('-1 day', strtotime($date)));
+                }
                 $next = date('Y-m-d', strtotime("$date +1 day"));
                 return [strtotime("$date 19:00:00"), strtotime("$next 06:59:59")];
             default:
@@ -123,7 +126,8 @@ class TurnosReportView extends CController {
         return $rows;
     }
 
-    private function queryTopHosts(\mysqli $db, int $s, int $e): array {
+    private function queryTopHosts(\mysqli $db, int $s, int $e, int $limit): array {
+        $limitClause = $limit > 0 ? "LIMIT $limit" : "";
         $sql = "SELECT h.hostid, h.host, h.name AS host_name,
                 COUNT(DISTINCT ev.eventid) AS event_count, MAX(ev.severity) AS max_severity
             FROM events ev
@@ -132,13 +136,14 @@ class TurnosReportView extends CController {
             INNER JOIN items i ON i.itemid=f.itemid
             INNER JOIN hosts h ON h.hostid=i.hostid
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $s AND $e
-            GROUP BY h.hostid ORDER BY event_count DESC LIMIT 5";
+            GROUP BY h.hostid ORDER BY event_count DESC $limitClause";
         $res = $db->query($sql); $rows = [];
         while ($r = $res->fetch_assoc()) $rows[] = $r;
         return $rows;
     }
 
-    private function queryTopTriggers(\mysqli $db, int $s, int $e): array {
+    private function queryTopTriggers(\mysqli $db, int $s, int $e, int $limit): array {
+        $limitClause = $limit > 0 ? "LIMIT $limit" : "";
         $sql = "SELECT t.triggerid,
                 REPLACE(t.description, '{HOST.NAME}', MIN(h.name)) AS description,
                 t.priority AS severity, COUNT(DISTINCT ev.eventid) AS event_count
@@ -148,7 +153,7 @@ class TurnosReportView extends CController {
             INNER JOIN items i ON i.itemid=f.itemid
             INNER JOIN hosts h ON h.hostid=i.hostid
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $s AND $e
-            GROUP BY t.triggerid ORDER BY t.priority DESC, event_count DESC LIMIT 5";
+            GROUP BY t.triggerid ORDER BY t.priority DESC, event_count DESC $limitClause";
         $res = $db->query($sql); $rows = [];
         while ($r = $res->fetch_assoc()) $rows[] = $r;
         return $rows;
@@ -187,7 +192,8 @@ class TurnosReportView extends CController {
     }
 
     private function queryMttaTimeline(\mysqli $db, int $s, int $e): array {
-        $sql = "SELECT FROM_UNIXTIME(ev.clock, '%H') AS hora, ROUND(AVG(a.clock - ev.clock),0) AS avg_mtta
+        $tzOffset = date('Z');
+        $sql = "SELECT FROM_UNIXTIME(ev.clock + $tzOffset, '%H') AS hora, ROUND(AVG(a.clock - ev.clock),0) AS avg_mtta
             FROM acknowledges a INNER JOIN events ev ON ev.eventid=a.eventid
             WHERE ev.source=0 AND ev.object=0 AND ev.clock BETWEEN $s AND $e
               AND a.acknowledgeid=(SELECT MIN(a2.acknowledgeid) FROM acknowledges a2 WHERE a2.eventid=a.eventid)
@@ -230,6 +236,9 @@ class TurnosReportView extends CController {
     protected function doAction(): void {
         $date  = $this->getInput('date', date('Y-m-d'));
         $shift = $this->getInput('shift', '24h');
+        
+        $limitStr = $this->getInput('limit', '5');
+        $limit = $limitStr === 'all' ? 0 : (int)$limitStr;
 
         [$ts_start, $ts_end] = $this->getShiftBounds($date, $shift);
 
@@ -240,20 +249,21 @@ class TurnosReportView extends CController {
             $db_error = 'Erro ao conectar ao banco de dados.';
             $data_pack = ['mtta'=>[],'inherited'=>[],'unacked'=>[],'top_hosts'=>[],
                 'top_triggers'=>[],'totals'=>['total'=>0,'critical'=>0,'average'=>0,'low'=>0],
-                'presence'=>[],'notes'=>[],'mtta_timeline'=>[],'sev_dist'=>[],'calendar'=>[]];
+                'presence'=>[],'notes'=>[],'mtta_timeline'=>[],'sev_dist'=>[],'calendar'=>[],'limit'=>$limitStr];
         } else {
             $data_pack = [
                 'mtta'          => $this->queryMTTA($db, $ts_start, $ts_end),
                 'inherited'     => $this->queryInheritedAlerts($db, $ts_start),
                 'unacked'       => $this->queryUnackedAlerts($db, $ts_start, $ts_end),
-                'top_hosts'     => $this->queryTopHosts($db, $ts_start, $ts_end),
-                'top_triggers'  => $this->queryTopTriggers($db, $ts_start, $ts_end),
+                'top_hosts'     => $this->queryTopHosts($db, $ts_start, $ts_end, $limit),
+                'top_triggers'  => $this->queryTopTriggers($db, $ts_start, $ts_end, $limit),
                 'totals'        => $this->queryEventTotals($db, $ts_start, $ts_end),
                 'presence'      => $this->queryPresence($db, $ts_start, $ts_end),
                 'notes'         => $this->queryNotes($db, $date, $shift),
                 'mtta_timeline' => $this->queryMttaTimeline($db, $ts_start, $ts_end),
                 'sev_dist'      => $this->querySeverityDistribution($db, $ts_start, $ts_end),
                 'calendar'      => $this->queryCalendarHeatmap($db),
+                'limit'         => $limitStr
             ];
             $db->close();
         }
