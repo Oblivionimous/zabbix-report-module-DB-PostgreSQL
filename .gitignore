@@ -4,3 +4,7 @@ Thumbs.db
 .idea/
 *.log
 
+# Testes locais
+.env
+docker-compose.yml
+
