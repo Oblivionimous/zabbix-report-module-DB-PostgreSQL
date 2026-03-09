@@ -1,83 +1,235 @@
 #!/bin/bash
 # ============================================================
-#  Install Script — Módulo Repasse de Plantão
-#  Compatível com Zabbix 6.4+ e 7.0+ em Linux nativo
+#  Instalador — Módulo Repasse de Plantão v2.0
+#  Suporta: Docker · All-in-One · Instalação Segmentada
 # ============================================================
 
-set -e
+set -euo pipefail
 
-# Cores
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# ── Cores ──────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
-echo -e "${GREEN}=== Instalação do Módulo Repasse de Plantão ===${NC}"
+MODULE_NAME="TurnosNocReport"
+MODULE_SRC="$(cd "$(dirname "$0")/.." && pwd)"
+MIN_ZABBIX="6.4"
 
-# Detectar diretório do Zabbix frontend
-ZABBIX_DIR="/usr/share/zabbix"
-if [ ! -d "$ZABBIX_DIR" ]; then
-    echo -e "${YELLOW}Diretório padrão $ZABBIX_DIR não encontrado.${NC}"
-    read -p "Informe o caminho do Zabbix frontend: " ZABBIX_DIR
-fi
+# ── Helpers ────────────────────────────────────────────────
+info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
+ok()      { echo -e "${GREEN}✔${NC}  $*"; }
+warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
+err()     { echo -e "${RED}✖${NC}  $*"; }
+step()    { echo -e "\n${BOLD}${CYAN}[$1]${NC} $2"; }
+die()     { err "$*"; exit 1; }
+ask()     { local __v; read -rp "$(echo -e "  ${YELLOW}?${NC} $1: ")" __v; echo "${__v:-${2:-}}"; }
+confirm() { local r; read -rp "$(echo -e "  ${YELLOW}?${NC} $1 [s/N]: ")" r; [[ "${r,,}" == "s" ]]; }
 
-if [ ! -f "$ZABBIX_DIR/index.php" ]; then
-    echo -e "${RED}ERRO: $ZABBIX_DIR não parece ser um Zabbix frontend válido.${NC}"
-    exit 1
-fi
+banner() {
+    echo -e "${CYAN}"
+    echo "  ╔═══════════════════════════════════════════════════╗"
+    echo "  ║      Módulo Repasse de Plantão — Instalador       ║"
+    echo "  ║              v2.0.0 · Zabbix 6.4 / 7.0            ║"
+    echo "  ╚═══════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
 
-MODULE_DIR="$ZABBIX_DIR/modules/TurnosNocReport"
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# ── Verifica pré-requisitos do host ────────────────────────
+check_deps() {
+    local missing=()
+    for cmd in mysql curl; do
+        command -v "$cmd" &>/dev/null || missing+=("$cmd")
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        warn "Pacotes não encontrados no host: ${missing[*]}"
+        warn "Alguns modos de instalação podem não funcionar."
+    fi
+}
 
-echo -e "\n${YELLOW}[1/4] Copiando módulo...${NC}"
-if [ -d "$MODULE_DIR" ]; then
-    echo "  Módulo já existe. Atualizando..."
-    rm -rf "$MODULE_DIR"
-fi
-cp -r "$SCRIPT_DIR" "$MODULE_DIR"
-echo -e "  ${GREEN}✓ Módulo copiado para $MODULE_DIR${NC}"
+# ══════════════════════════════════════════════════════════
+#  MODO 1 — DOCKER
+# ══════════════════════════════════════════════════════════
+install_docker() {
+    step "Docker" "Instalação em ambiente Docker / Docker Compose"
 
-# Detectar usuário do web server
-WEB_USER="www-data"
-if id "apache" &>/dev/null; then WEB_USER="apache"; fi
-if id "nginx" &>/dev/null; then WEB_USER="nginx"; fi
+    # Detectar container web
+    local web_container
+    web_container=$(ask "Nome do container Zabbix Web" "zabbix-web")
+    docker inspect "$web_container" &>/dev/null || die "Container '$web_container' não encontrado. Verifique com: docker ps"
 
-chown -R "$WEB_USER:$WEB_USER" "$MODULE_DIR"
-echo -e "  ${GREEN}✓ Permissões ajustadas ($WEB_USER)${NC}"
+    # Detectar container DB
+    local db_container
+    db_container=$(ask "Nome do container MariaDB/MySQL" "zabbix-mariadb")
+    docker inspect "$db_container" &>/dev/null || die "Container '$db_container' não encontrado."
 
-echo -e "\n${YELLOW}[2/4] Criando tabelas no banco de dados...${NC}"
-read -p "  Host do MariaDB/MySQL [localhost]: " DB_HOST
-DB_HOST=${DB_HOST:-localhost}
-read -p "  Usuário do banco [zabbix]: " DB_USER
-DB_USER=${DB_USER:-zabbix}
-read -sp "  Senha do banco: " DB_PASS
-echo
-read -p "  Nome do banco [zabbix]: " DB_NAME
-DB_NAME=${DB_NAME:-zabbix}
+    local db_user db_pass db_name
+    db_user=$(ask "Usuário do banco" "zabbix")
+    read -rsp "  ${YELLOW}?${NC} Senha do banco: " db_pass; echo
+    db_name=$(ask "Nome do banco" "zabbix")
 
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$MODULE_DIR/sql/schema.sql"
-echo -e "  ${GREEN}✓ Tabelas criadas${NC}"
+    step "1/3" "Copiando módulo para o container..."
+    local target="/usr/share/zabbix/modules/${MODULE_NAME}"
+    docker exec "$web_container" bash -c "rm -rf ${target} && mkdir -p /usr/share/zabbix/modules"
+    docker cp "${MODULE_SRC}/." "${web_container}:${target}"
+    docker exec --user root "$web_container" bash -c "chown -R www-data:www-data ${target} && chmod -R 755 ${target}" 2>/dev/null || true
+    ok "Módulo copiado para ${target}"
 
-echo -e "\n${YELLOW}[3/4] Configurando cron de presença...${NC}"
-read -p "  Deseja configurar o cron de presença? [s/N]: " SETUP_CRON
-if [[ "$SETUP_CRON" =~ ^[sS]$ ]]; then
-    CRON_LINE="*/5 * * * * $WEB_USER php $MODULE_DIR/scripts/cron_presence_tracker.php"
-    echo "$CRON_LINE" > /etc/cron.d/turnos-presence
-    chmod 644 /etc/cron.d/turnos-presence
-    echo -e "  ${GREEN}✓ Cron configurado (/etc/cron.d/turnos-presence)${NC}"
-    echo -e "  ${YELLOW}⚠ Edite as credenciais da API em: $MODULE_DIR/scripts/cron_presence_tracker.php${NC}"
-else
-    echo "  Pulando configuração do cron."
-fi
+    step "2/3" "Criando tabelas no banco de dados..."
+    docker exec -i "$db_container" mysql -u"$db_user" -p"$db_pass" "$db_name" < "${MODULE_SRC}/sql/schema.sql" \
+        || die "Falha ao executar schema.sql. Verifique as credenciais."
+    ok "Tabelas criadas com sucesso"
 
-echo -e "\n${YELLOW}[4/4] Finalizando...${NC}"
-echo -e "  ${GREEN}✓ Instalação concluída!${NC}"
+    step "3/3" "Configurando cron de presença (opcional)..."
+    if confirm "Deseja configurar o cron de presença dentro do container?"; then
+        local cron_line="*/5 * * * * php ${target}/scripts/cron_presence_tracker.php >> /var/log/zabbix_presence.log 2>&1"
+        docker exec "$web_container" bash -c "echo '${cron_line}' | crontab -" 2>/dev/null \
+            && ok "Cron configurado no container" \
+            || warn "Não foi possível configurar o cron automaticamente. Configure manualmente."
+    fi
+
+    finish_message
+}
+
+# ══════════════════════════════════════════════════════════
+#  MODO 2 — ALL-IN-ONE (tudo na mesma VM)
+# ══════════════════════════════════════════════════════════
+install_allinone() {
+    step "All-in-One" "Instalação em servidor único (Zabbix + DB + Web na mesma VM)"
+    [[ $EUID -ne 0 ]] && die "Este modo requer execução como root (sudo ./install.sh)"
+
+    # Localizar frontend
+    local zabbix_dir="/usr/share/zabbix"
+    [[ ! -f "${zabbix_dir}/index.php" ]] && zabbix_dir=$(ask "Caminho do Zabbix frontend" "/usr/share/zabbix")
+    [[ ! -f "${zabbix_dir}/index.php" ]] && die "'${zabbix_dir}' não é um frontend Zabbix válido."
+
+    local db_host db_user db_pass db_name
+    db_host=$(ask "Host do banco" "localhost")
+    db_user=$(ask "Usuário do banco" "zabbix")
+    read -rsp "  ${YELLOW}?${NC} Senha do banco: " db_pass; echo
+    db_name=$(ask "Nome do banco" "zabbix")
+
+    step "1/4" "Copiando módulo..."
+    local target="${zabbix_dir}/modules/${MODULE_NAME}"
+    [[ -d "$target" ]] && { warn "Módulo já existe. Atualizando..."; rm -rf "$target"; }
+    cp -r "${MODULE_SRC}" "$target"
+
+    # Detectar usuário do web server
+    local web_user="www-data"
+    id apache &>/dev/null && web_user="apache"
+    id nginx  &>/dev/null && web_user="nginx"
+    chown -R "${web_user}:${web_user}" "$target"
+    chmod -R 755 "$target"
+    ok "Módulo copiado para ${target} (owner: ${web_user})"
+
+    step "2/4" "Criando tabelas no banco de dados..."
+    mysql -h "$db_host" -u "$db_user" -p"$db_pass" "$db_name" < "${MODULE_SRC}/sql/schema.sql" \
+        || die "Falha ao executar schema.sql."
+    ok "Tabelas criadas"
+
+    step "3/4" "Configurando cron de presença (opcional)..."
+    if confirm "Deseja configurar o cron de presença?"; then
+        local cron_file="/etc/cron.d/turnos-presence"
+        echo "*/5 * * * * ${web_user} /usr/bin/php ${target}/scripts/cron_presence_tracker.php >> /var/log/zabbix_presence.log 2>&1" \
+            > "$cron_file"
+        chmod 644 "$cron_file"
+        ok "Cron configurado em ${cron_file}"
+        warn "Edite as credenciais da API em: ${target}/scripts/cron_presence_tracker.php"
+    fi
+
+    step "4/4" "Verificando permissões finais..."
+    [[ -r "${target}/manifest.json" ]] && ok "manifest.json acessível" || warn "Verifique permissões em ${target}"
+
+    finish_message
+}
+
+# ══════════════════════════════════════════════════════════
+#  MODO 3 — SEGMENTADO (web e DB em servidores distintos)
+# ══════════════════════════════════════════════════════════
+install_segmented() {
+    step "Segmentado" "Web e banco em servidores separados"
+    [[ $EUID -ne 0 ]] && die "Este modo requer execução como root (sudo ./install.sh)"
+
+    info "Execute este script no servidor do Zabbix Web."
+    info "Você precisará acessar o banco de dados remotamente."
+
+    # Frontend
+    local zabbix_dir="/usr/share/zabbix"
+    [[ ! -f "${zabbix_dir}/index.php" ]] && zabbix_dir=$(ask "Caminho do Zabbix frontend" "/usr/share/zabbix")
+    [[ ! -f "${zabbix_dir}/index.php" ]] && die "'${zabbix_dir}' não é um frontend Zabbix válido."
+
+    local db_host db_user db_pass db_name db_port
+    db_host=$(ask "Host do banco de dados (IP ou hostname)" "192.168.1.100")
+    db_port=$(ask "Porta do banco" "3306")
+    db_user=$(ask "Usuário do banco" "zabbix")
+    read -rsp "  ${YELLOW}?${NC} Senha do banco: " db_pass; echo
+    db_name=$(ask "Nome do banco" "zabbix")
+
+    step "1/4" "Testando conectividade com o banco remoto..."
+    mysql -h "$db_host" -P "$db_port" -u "$db_user" -p"$db_pass" "$db_name" -e "SELECT 1;" &>/dev/null \
+        || die "Não foi possível conectar ao banco ${db_host}:${db_port}. Verifique credenciais e firewall."
+    ok "Conexão com banco remoto OK"
+
+    step "2/4" "Copiando módulo para o servidor web..."
+    local target="${zabbix_dir}/modules/${MODULE_NAME}"
+    [[ -d "$target" ]] && { warn "Atualizando instalação existente..."; rm -rf "$target"; }
+    cp -r "${MODULE_SRC}" "$target"
+
+    local web_user="www-data"
+    id apache &>/dev/null && web_user="apache"
+    id nginx  &>/dev/null && web_user="nginx"
+    chown -R "${web_user}:${web_user}" "$target"
+    chmod -R 755 "$target"
+    ok "Módulo copiado (owner: ${web_user})"
+
+    step "3/4" "Criando tabelas no banco remoto..."
+    mysql -h "$db_host" -P "$db_port" -u "$db_user" -p"$db_pass" "$db_name" < "${MODULE_SRC}/sql/schema.sql" \
+        || die "Falha ao executar schema.sql."
+    ok "Tabelas criadas no banco remoto"
+
+    step "4/4" "Cron de presença (opcional)..."
+    if confirm "Deseja configurar o cron de presença neste servidor web?"; then
+        local cron_file="/etc/cron.d/turnos-presence"
+        echo "*/5 * * * * ${web_user} /usr/bin/php ${target}/scripts/cron_presence_tracker.php >> /var/log/zabbix_presence.log 2>&1" \
+            > "$cron_file"
+        chmod 644 "$cron_file"
+        ok "Cron configurado em ${cron_file}"
+        warn "Edite as credenciais da API e o host do DB em: ${target}/scripts/cron_presence_tracker.php"
+    fi
+
+    finish_message
+}
+
+# ── Mensagem final ─────────────────────────────────────────
+finish_message() {
+    echo -e "\n${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}${BOLD}  ✔  Instalação concluída com sucesso!         ${NC}"
+    echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${BOLD}Próximos passos no Zabbix:${NC}"
+    echo "  1. Acesse: Administration → General → Modules"
+    echo "  2. Clique em  \"Scan directory\""
+    echo "  3. Habilite   \"Relatório Repasse de Plantão\""
+    echo "  4. Acesse:    Reports → Repasse Plantão"
+    echo ""
+}
+
+# ══════════════════════════════════════════════════════════
+#  MENU PRINCIPAL
+# ══════════════════════════════════════════════════════════
+banner
+check_deps
+
+echo -e "${BOLD}Selecione o modo de instalação:${NC}\n"
+echo "  1)  Docker / Docker Compose"
+echo "  2)  All-in-One  (Zabbix + DB + Web na mesma VM)"
+echo "  3)  Segmentado  (Web e banco em servidores distintos)"
 echo ""
-echo -e "${GREEN}Próximos passos:${NC}"
-echo "  1. No Zabbix: Administration → General → Modules"
-echo "  2. Clique em 'Scan directory'"
-echo "  3. Habilite 'Relatório Repasse de Plantão'"
-echo "  4. Acesse: Reports → Repasse Plantão"
-echo ""
-echo -e "${YELLOW}Se usar presença, edite as credenciais em:${NC}"
-echo "  $MODULE_DIR/scripts/cron_presence_tracker.php"
+
+MODO=$(ask "Opção" "1")
+
+case "$MODO" in
+    1) install_docker      ;;
+    2) install_allinone    ;;
+    3) install_segmented   ;;
+    *) die "Opção inválida: $MODO" ;;
+esac
+

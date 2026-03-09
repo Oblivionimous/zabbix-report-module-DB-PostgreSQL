@@ -1,0 +1,9 @@
+# Exclui estes arquivos/pastas do `git archive` (usado no GitHub Actions Release)
+.github/              export-ignore
+.gitignore            export-ignore
+.gitattributes        export-ignore
+.env.example          export-ignore
+scripts/generate_final_demo.php   export-ignore
+scripts/generate_final_demo.ps1   export-ignore
+scripts/populate_demo_data.php    export-ignore
+scripts/populate_demo_data.ps1    export-ignore
