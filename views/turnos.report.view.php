@@ -17,7 +17,13 @@ function rp_duration(int $s): string {
     return floor($s/3600).'h '.floor(($s%3600)/60).'m';
 }
 function rp_shiftLabel(string $sh): string {
-    return ['manha'=>'Manhã (07h–13h)','tarde'=>'Tarde (13h–19h)','noite'=>'Noite (19h–07h)','24h'=>'24 Horas'][$sh] ?? $sh;
+    return [
+        'manha'       => 'Manhã (06h–12h)',
+        'tarde'       => 'Tarde (12h–18h)',
+        'plantao_dia' => 'Plantão Dia (06h–18h)',
+        'noite'       => 'Noite (18h–06h)',
+        '24h'         => '24 Horas',
+    ][$sh] ?? $sh;
 }
 function rp_probLink(?string $h=null): string {
     $u = 'zabbix.php?action=problem.view&filter_set=1&filter_show=3';
@@ -75,7 +81,13 @@ $calendar_json = json_encode($data['calendar']);
             <input type="hidden" name="action" value="turnos.report.view">
             <input type="date" name="date" class="rp-nh-input" value="<?= $date ?>" onchange="this.form.submit()">
             <select name="shift" class="rp-nh-input" onchange="this.form.submit()">
-                <?php foreach (['24h'=>'24 Horas (00h–23h)','manha'=>'Manhã (07h–13h)','tarde'=>'Tarde (13h–19h)','noite'=>'Noite (19h–07h)'] as $k=>$v): ?>
+                <?php foreach ([
+                    '24h'         => '24 Horas (00h–23h)',
+                    'plantao_dia' => 'Plantão Dia (06h–18h)',
+                    'manha'       => 'Manhã (06h–12h)',
+                    'tarde'       => 'Tarde (12h–18h)',
+                    'noite'       => 'Noite (18h–06h)',
+                ] as $k=>$v): ?>
                     <option value="<?= $k ?>" <?= $k===$shift?'selected':'' ?>><?= $v ?></option>
                 <?php endforeach; ?>
             </select>

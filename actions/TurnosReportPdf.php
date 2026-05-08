@@ -12,34 +12,37 @@ class TurnosReportPdf extends CController {
 
     protected function init(): void { $this->disableCsrfValidation(); }
     protected function checkInput(): bool {
-        return $this->validateInput(['date' => 'string', 'shift' => 'in 24h,manha,tarde,noite']);
+        return $this->validateInput(['date' => 'string', 'shift' => 'in 24h,manha,tarde,plantao_dia,noite']);
     }
     protected function checkPermissions(): bool { return true; }
 
-    private function getDb(): ?\mysqli {
+    private function getDb(): ?\PDO {
         try {
-            $server = $GLOBALS['DB']['SERVER'] ?? 'localhost';
-            $port   = $GLOBALS['DB']['PORT'] ?? '3306';
+            $host   = $GLOBALS['DB']['SERVER']   ?? 'localhost';
+            $port   = $GLOBALS['DB']['PORT']     ?? '5432';
             $dbname = $GLOBALS['DB']['DATABASE'] ?? 'zabbix';
-            $user   = $GLOBALS['DB']['USER'] ?? 'zabbix';
+            $user   = $GLOBALS['DB']['USER']     ?? 'zabbix';
             $pass   = $GLOBALS['DB']['PASSWORD'] ?? '';
-            mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-            $m = new \mysqli($server, $user, $pass, $dbname, (int)$port);
-            $m->set_charset('utf8mb4');
-            return $m;
+
+            $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
+            return new \PDO($dsn, $user, $pass, [
+                \PDO::ATTR_ERRMODE            => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]);
         } catch (\Exception $e) { return null; }
     }
 
     private function getShiftBounds(string $date, string $shift): array {
         switch ($shift) {
-            case 'manha': return [strtotime("$date 07:00:00"), strtotime("$date 12:59:59")];
-            case 'tarde': return [strtotime("$date 13:00:00"), strtotime("$date 18:59:59")];
+            case 'manha':      return [strtotime("$date 06:00:00"), strtotime("$date 11:59:59")];
+            case 'tarde':      return [strtotime("$date 12:00:00"), strtotime("$date 17:59:59")];
+            case 'plantao_dia': return [strtotime("$date 06:00:00"), strtotime("$date 17:59:59")];
             case 'noite':
-                if ($date === date('Y-m-d') && (int)date('H') < 7) {
+                if ($date === date('Y-m-d') && (int)date('H') < 6) {
                     $date = date('Y-m-d', strtotime('-1 day', strtotime($date)));
                 }
                 $next = date('Y-m-d', strtotime("$date +1 day"));
-                return [strtotime("$date 19:00:00"), strtotime("$next 06:59:59")];
+                return [strtotime("$date 18:00:00"), strtotime("$next 05:59:59")];
             default: return [strtotime("$date 00:00:00"), strtotime("$date 23:59:59")];
         }
     }
@@ -55,13 +58,19 @@ class TurnosReportPdf extends CController {
         return floor($s/3600).'h '.floor(($s%3600)/60).'m';
     }
     private function shiftLabel(string $sh): string {
-        return ['manha'=>'Manhã (07h–13h)','tarde'=>'Tarde (13h–19h)','noite'=>'Noite (19h–07h)','24h'=>'24 Horas'][$sh] ?? $sh;
+        return [
+            'manha'       => 'Manhã (06h–12h)',
+            'tarde'       => 'Tarde (12h–18h)',
+            'plantao_dia' => 'Plantão Dia (06h–18h)',
+            'noite'       => 'Noite (18h–06h)',
+            '24h'         => '24 Horas',
+        ][$sh] ?? $sh;
     }
 
     protected function doAction(): void {
         $date  = $this->getInput('date', date('Y-m-d'));
         $shift = $this->getInput('shift', '24h');
-        
+
         $limitStr = $this->getInput('limit', '5');
         $limit = $limitStr === 'all' ? 0 : (int)$limitStr;
         $limitClause = $limit > 0 ? "LIMIT $limit" : "";
@@ -69,45 +78,63 @@ class TurnosReportPdf extends CController {
         [$ts_start, $ts_end] = $this->getShiftBounds($date, $shift);
 
         $db = $this->getDb();
-        if (!$db) { echo '<h1>Erro de conexão com o banco de dados.</h1>'; die(); }
+        if (!$db) { echo '<h1>Erro de conexão com o banco de dados PostgreSQL.</h1>'; die(); }
 
-        // Run all queries (same as TurnosReportView but inline for PDF)
-        $mtta = $this->q($db, "SELECT sub.userid,sub.username,sub.fullname,COUNT(*) AS total_acks,
-            ROUND(AVG(sub.mtta),0) AS avg_mtta,MIN(sub.mtta) AS min_mtta,MAX(sub.mtta) AS max_mtta
-            FROM (SELECT a.userid,u.username,CONCAT(COALESCE(u.name,''),' ',COALESCE(u.surname,'')) AS fullname,
-                a.eventid,(a.clock-ev.clock) AS mtta FROM acknowledges a
+        $mtta = $this->q($db, "SELECT sub.userid, sub.username, sub.fullname,
+            COUNT(*) AS total_acks, ROUND(AVG(sub.mtta)::numeric,0) AS avg_mtta,
+            MIN(sub.mtta) AS min_mtta, MAX(sub.mtta) AS max_mtta
+            FROM (SELECT a.userid, u.username,
+                COALESCE(u.name,'') || ' ' || COALESCE(u.surname,'') AS fullname,
+                a.eventid, (a.clock-ev.clock) AS mtta FROM acknowledges a
                 INNER JOIN events ev ON ev.eventid=a.eventid INNER JOIN users u ON u.userid=a.userid
                 WHERE ev.source=0 AND ev.object=0 AND ev.clock BETWEEN $ts_start AND $ts_end
                 AND a.acknowledgeid=(SELECT MIN(a2.acknowledgeid) FROM acknowledges a2 WHERE a2.eventid=a.eventid)
-            ) sub GROUP BY sub.userid ORDER BY avg_mtta ASC");
+            ) sub GROUP BY sub.userid, sub.username, sub.fullname ORDER BY avg_mtta ASC");
 
-        $inherited = $this->q($db, "SELECT e.eventid,e.clock,e.severity,t.description AS trigger_desc,
-            h.host,h.name AS host_name,($ts_start-e.clock) AS age_seconds,
-            CASE WHEN EXISTS(SELECT 1 FROM acknowledges ak WHERE ak.eventid=e.eventid) THEN 1 ELSE 0 END AS has_ack
+        $inherited = $this->q($db, "SELECT * FROM (
+            SELECT DISTINCT ON (e.eventid)
+                e.eventid, e.clock, e.severity,
+                REPLACE(t.description, '{HOST.NAME}', h.name) AS trigger_desc,
+                h.host, h.name AS host_name, ($ts_start - e.clock) AS age_seconds,
+                CASE WHEN EXISTS(SELECT 1 FROM acknowledges ak WHERE ak.eventid=e.eventid) THEN 1 ELSE 0 END AS has_ack
             FROM events e LEFT JOIN event_recovery er ON er.eventid=e.eventid
             LEFT JOIN events re ON re.eventid=er.r_eventid
             INNER JOIN triggers t ON t.triggerid=e.objectid INNER JOIN functions f ON f.triggerid=t.triggerid
             INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
-            WHERE e.source=0 AND e.object=0 AND e.value=1 AND e.clock<$ts_start AND (er.r_eventid IS NULL OR re.clock>$ts_start)
-            GROUP BY e.eventid ORDER BY e.severity DESC LIMIT 50");
+            WHERE e.source=0 AND e.object=0 AND e.value=1
+              AND e.clock < $ts_start AND (er.r_eventid IS NULL OR re.clock > $ts_start)
+            ORDER BY e.eventid
+            ) sub ORDER BY severity DESC LIMIT 50");
 
-        $unacked = $this->q($db, "SELECT ev.eventid,ev.clock,ev.severity,t.description AS trigger_desc,h.host,h.name AS host_name
-            FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid INNER JOIN functions f ON f.triggerid=t.triggerid
-            INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
-            WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
-            AND NOT EXISTS(SELECT 1 FROM acknowledges ak WHERE ak.eventid=ev.eventid)
-            GROUP BY ev.eventid ORDER BY ev.severity DESC LIMIT 50");
-
-        $top_hosts = $this->q($db, "SELECT h.host,h.name AS host_name,COUNT(DISTINCT ev.eventid) AS event_count,MAX(ev.severity) AS max_severity
-            FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid INNER JOIN functions f ON f.triggerid=t.triggerid
-            INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
-            WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
-            GROUP BY h.hostid ORDER BY event_count DESC $limitClause");
-
-        $top_triggers = $this->q($db, "SELECT t.description,t.priority AS severity,COUNT(DISTINCT ev.eventid) AS event_count
+        $unacked = $this->q($db, "SELECT * FROM (
+            SELECT DISTINCT ON (ev.eventid)
+                ev.eventid, ev.clock, ev.severity,
+                REPLACE(t.description, '{HOST.NAME}', h.name) AS trigger_desc,
+                h.host, h.name AS host_name
             FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid
+            INNER JOIN functions f ON f.triggerid=t.triggerid
+            INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
-            GROUP BY t.triggerid ORDER BY t.priority DESC,event_count DESC $limitClause");
+              AND NOT EXISTS(SELECT 1 FROM acknowledges ak WHERE ak.eventid=ev.eventid)
+            ORDER BY ev.eventid
+            ) sub ORDER BY severity DESC LIMIT 50");
+
+        $top_hosts = $this->q($db, "SELECT h.host, h.name AS host_name,
+            COUNT(DISTINCT ev.eventid) AS event_count, MAX(ev.severity) AS max_severity
+            FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid
+            INNER JOIN functions f ON f.triggerid=t.triggerid
+            INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
+            WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
+            GROUP BY h.hostid, h.host, h.name ORDER BY event_count DESC $limitClause");
+
+        $top_triggers = $this->q($db, "SELECT
+            REPLACE(MIN(t.description), '{HOST.NAME}', MIN(h.name)) AS description,
+            MAX(t.priority) AS severity, COUNT(DISTINCT ev.eventid) AS event_count
+            FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid
+            INNER JOIN functions f ON f.triggerid=t.triggerid
+            INNER JOIN items i ON i.itemid=f.itemid INNER JOIN hosts h ON h.hostid=i.hostid
+            WHERE ev.source=0 AND ev.object=0 AND ev.value=1 AND ev.clock BETWEEN $ts_start AND $ts_end
+            GROUP BY t.triggerid ORDER BY severity DESC, event_count DESC $limitClause");
 
         $totals = $db->query("SELECT COUNT(DISTINCT ev.eventid) AS total,
             SUM(CASE WHEN ev.severity>=4 THEN 1 ELSE 0 END) AS critical,
@@ -115,15 +142,13 @@ class TurnosReportPdf extends CController {
             SUM(CASE WHEN ev.severity<=2 THEN 1 ELSE 0 END) AS low
             FROM events ev INNER JOIN triggers t ON t.triggerid=ev.objectid
             WHERE ev.source=0 AND ev.object=0 AND ev.value=1
-            AND ev.clock BETWEEN $ts_start AND $ts_end")->fetch_assoc() ?: ['total'=>0,'critical'=>0,'average'=>0,'low'=>0];
+            AND ev.clock BETWEEN $ts_start AND $ts_end")->fetch() ?: ['total'=>0,'critical'=>0,'average'=>0,'low'=>0];
 
-        $notes = $this->qSafe($db, "SELECT analyst_name,notes,created_at FROM custom_shift_notes
-            WHERE shift_date='$date' AND shift_name='$shift' ORDER BY created_at DESC");
+        $notes = $this->qNotes($db, $date, $shift);
 
         $user_fn = trim((\CWebUser::$data['name']??'').' '.(\CWebUser::$data['surname']??'')) ?: (\CWebUser::$data['username']??'Admin');
-        $db->close();
+        $db = null;
 
-        // Global MTTA
         $gmtta = 0;
         if ($mtta) { $s=0;$c=0; foreach($mtta as $m){$s+=$m['avg_mtta']*$m['total_acks'];$c+=$m['total_acks'];} $gmtta=$c>0?round($s/$c):0; }
 
@@ -147,14 +172,12 @@ class TurnosReportPdf extends CController {
 
         echo '<div class="rp-native-container">';
 
-        // Header
         echo '<div class="rp-native-header"><div class="rp-nh-left">';
         echo '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>';
         echo '<span class="rp-nh-title">Repasse de Plantão</span>';
         echo '<span class="rp-nh-sub">'.$this->shiftLabel($shift).' — '.$date.'</span>';
         echo '</div></div>';
 
-        // KPIs
         echo '<div class="rp-kpi-grid">';
         echo '<div class="rp-kpi"><div class="rp-kpi-icon bg-blue"><i class="fas fa-bell"></i></div><div class="rp-kpi-body"><span class="rp-kpi-val">'.(int)$totals['total'].'</span><span class="rp-kpi-label">Total Eventos</span></div></div>';
         echo '<div class="rp-kpi"><div class="rp-kpi-icon bg-red"><i class="fas fa-fire"></i></div><div class="rp-kpi-body"><span class="rp-kpi-val">'.(int)$totals['critical'].'</span><span class="rp-kpi-label">Críticos</span></div></div>';
@@ -163,7 +186,6 @@ class TurnosReportPdf extends CController {
         echo '<div class="rp-kpi"><div class="rp-kpi-icon bg-purple"><i class="fas fa-history"></i></div><div class="rp-kpi-body"><span class="rp-kpi-val">'.count($inherited).'</span><span class="rp-kpi-label">Herdados</span></div></div>';
         echo '</div>';
 
-        // MTTA table
         if ($mtta) {
             echo '<div class="rp-card"><div class="rp-card-head"><i class="fas fa-stopwatch"></i> MTTA por Analista</div>';
             echo '<table class="rp-table"><thead><tr><th>Analista</th><th>ACKs</th><th>MTTA Médio</th><th>Mín</th><th>Máx</th></tr></thead><tbody>';
@@ -176,7 +198,6 @@ class TurnosReportPdf extends CController {
             echo '</tbody></table></div>';
         }
 
-        // Inherited
         if ($inherited) {
             echo '<div class="rp-card"><div class="rp-card-head"><i class="fas fa-history"></i> Alertas Herdados</div>';
             echo '<table class="rp-table"><thead><tr><th>Início</th><th>Severidade</th><th>Host</th><th>Problema</th><th>Idade</th></tr></thead><tbody>';
@@ -190,7 +211,6 @@ class TurnosReportPdf extends CController {
             echo '</tbody></table></div>';
         }
 
-        // Unacked
         if ($unacked) {
             echo '<div class="rp-card"><div class="rp-card-head"><i class="fas fa-exclamation-triangle"></i> Alertas Sem ACK</div>';
             echo '<table class="rp-table"><thead><tr><th>Hora</th><th>Severidade</th><th>Host</th><th>Problema</th></tr></thead><tbody>';
@@ -203,7 +223,6 @@ class TurnosReportPdf extends CController {
             echo '</tbody></table></div>';
         }
 
-        // Top Hosts + Triggers side by side
         echo '<div class="rp-noise-row">';
         if ($top_hosts) {
             echo '<div class="rp-card"><div class="rp-card-head"><i class="fas fa-server"></i> Top Hosts</div>';
@@ -227,7 +246,6 @@ class TurnosReportPdf extends CController {
         }
         echo '</div>';
 
-        // Notas
         if ($notes) {
             echo '<div class="rp-card"><div class="rp-card-head"><i class="fas fa-book-open"></i> Diário de Bordo</div><div class="rp-card-body">';
             foreach ($notes as $n) {
@@ -237,22 +255,23 @@ class TurnosReportPdf extends CController {
             echo '</div></div>';
         }
 
-        // Footer
         echo '<div class="rp-native-footer"><span>Relatório gerado em '.date('d/m/Y H:i:s').' por '.$user_fn.'</span><span>Módulo Repasse v2.0.0</span></div>';
         echo '</div></body></html>';
 
-        // Auto print
         echo '<script>window.onload=function(){window.print();}</script>';
         die();
     }
 
-    private function q(\mysqli $db, string $sql): array {
-        $res = $db->query($sql); $rows = [];
-        while ($r = $res->fetch_assoc()) $rows[] = $r;
-        return $rows;
+    private function q(\PDO $db, string $sql): array {
+        return $db->query($sql)->fetchAll();
     }
 
-    private function qSafe(\mysqli $db, string $sql): array {
-        try { return $this->q($db, $sql); } catch (\Exception $e) { return []; }
+    private function qNotes(\PDO $db, string $date, string $shift): array {
+        try {
+            $stmt = $db->prepare("SELECT analyst_name, notes, created_at FROM custom_shift_notes
+                WHERE shift_date = ? AND shift_name = ? ORDER BY created_at DESC");
+            $stmt->execute([$date, $shift]);
+            return $stmt->fetchAll();
+        } catch (\Exception $e) { return []; }
     }
 }

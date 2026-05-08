@@ -13,7 +13,7 @@ class TurnosNotesSave extends CController {
     protected function checkInput(): bool {
         return $this->validateInput([
             'note'       => 'string',
-            'shift'      => 'in 24h,manha,tarde,noite',
+            'shift'      => 'in 24h,manha,tarde,plantao_dia,noite',
             'shift_date' => 'string',
         ]);
     }
@@ -22,18 +22,19 @@ class TurnosNotesSave extends CController {
         return true;
     }
 
-    private function getDb(): ?\mysqli {
+    private function getDb(): ?\PDO {
         try {
-            $server = $GLOBALS['DB']['SERVER']   ?? 'localhost';
-            $port   = $GLOBALS['DB']['PORT']     ?? '3306';
+            $host   = $GLOBALS['DB']['SERVER']   ?? 'localhost';
+            $port   = $GLOBALS['DB']['PORT']     ?? '5432';
             $dbname = $GLOBALS['DB']['DATABASE'] ?? 'zabbix';
             $user   = $GLOBALS['DB']['USER']     ?? 'zabbix';
             $pass   = $GLOBALS['DB']['PASSWORD'] ?? '';
 
-            mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-            $mysqli = new \mysqli($server, $user, $pass, $dbname, (int)$port);
-            $mysqli->set_charset('utf8mb4');
-            return $mysqli;
+            $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
+            return new \PDO($dsn, $user, $pass, [
+                \PDO::ATTR_ERRMODE            => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]);
         } catch (\Exception $e) {
             return null;
         }
@@ -64,21 +65,21 @@ class TurnosNotesSave extends CController {
 
             $stmt = $db->prepare(
                 "INSERT INTO custom_shift_notes (shift_date, shift_name, analyst_userid, analyst_name, notes, created_at)
-                 VALUES (?, ?, ?, ?, ?, NOW())"
+                 VALUES (?, ?, ?, ?, ?, NOW()) RETURNING id"
             );
-            $stmt->bind_param('ssiss', $shift_date, $shift, $userid, $fullname, $note);
-            $stmt->execute();
+            $stmt->execute([$shift_date, $shift, $userid, $fullname, $note]);
+            $row = $stmt->fetch();
 
             echo json_encode([
                 'success' => true,
                 'message' => 'Nota salva com sucesso!',
-                'id'      => $db->insert_id
+                'id'      => $row['id'] ?? null,
             ]);
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => 'Erro SQL: '.$e->getMessage()]);
         }
 
-        $db->close();
+        $db = null;
         die();
     }
 }

@@ -2,6 +2,7 @@
 # ============================================================
 #  Instalador — Módulo Repasse de Plantão v2.0
 #  Suporta: Docker · All-in-One · Instalação Segmentada
+#  Banco de dados: PostgreSQL
 # ============================================================
 
 set -euo pipefail
@@ -28,7 +29,7 @@ banner() {
     echo -e "${CYAN}"
     echo "  ╔═══════════════════════════════════════════════════╗"
     echo "  ║      Módulo Repasse de Plantão — Instalador       ║"
-    echo "  ║              v2.0.0 · Zabbix 6.4 / 7.0            ║"
+    echo "  ║      v2.0.0 · Zabbix 7.0 · PostgreSQL            ║"
     echo "  ╚═══════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -36,7 +37,7 @@ banner() {
 # ── Verifica pré-requisitos do host ────────────────────────
 check_deps() {
     local missing=()
-    for cmd in mysql curl; do
+    for cmd in psql curl; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -51,14 +52,12 @@ check_deps() {
 install_docker() {
     step "Docker" "Instalação em ambiente Docker / Docker Compose"
 
-    # Detectar container web
     local web_container
     web_container=$(ask "Nome do container Zabbix Web" "zabbix-web")
     docker inspect "$web_container" &>/dev/null || die "Container '$web_container' não encontrado. Verifique com: docker ps"
 
-    # Detectar container DB
     local db_container
-    db_container=$(ask "Nome do container MariaDB/MySQL" "zabbix-mariadb")
+    db_container=$(ask "Nome do container PostgreSQL" "zabbix-postgres")
     docker inspect "$db_container" &>/dev/null || die "Container '$db_container' não encontrado."
 
     local db_user db_pass db_name
@@ -73,8 +72,8 @@ install_docker() {
     docker exec --user root "$web_container" bash -c "chown -R www-data:www-data ${target} && chmod -R 755 ${target}" 2>/dev/null || true
     ok "Módulo copiado para ${target}"
 
-    step "2/3" "Criando tabelas no banco de dados..."
-    docker exec -i "$db_container" mysql -u"$db_user" -p"$db_pass" "$db_name" < "${MODULE_SRC}/sql/schema.sql" \
+    step "2/3" "Criando tabelas no banco de dados PostgreSQL..."
+    docker exec -i "$db_container" psql -U "$db_user" -d "$db_name" < "${MODULE_SRC}/sql/schema.sql" \
         || die "Falha ao executar schema.sql. Verifique as credenciais."
     ok "Tabelas criadas com sucesso"
 
@@ -96,7 +95,6 @@ install_allinone() {
     step "All-in-One" "Instalação em servidor único (Zabbix + DB + Web na mesma VM)"
     [[ $EUID -ne 0 ]] && die "Este modo requer execução como root (sudo ./install.sh)"
 
-    # Localizar frontend
     local zabbix_dir="/usr/share/zabbix"
     [[ ! -f "${zabbix_dir}/index.php" ]] && zabbix_dir=$(ask "Caminho do Zabbix frontend" "/usr/share/zabbix")
     [[ ! -f "${zabbix_dir}/index.php" ]] && die "'${zabbix_dir}' não é um frontend Zabbix válido."
@@ -112,7 +110,6 @@ install_allinone() {
     [[ -d "$target" ]] && { warn "Módulo já existe. Atualizando..."; rm -rf "$target"; }
     cp -r "${MODULE_SRC}" "$target"
 
-    # Detectar usuário do web server
     local web_user="www-data"
     id apache &>/dev/null && web_user="apache"
     id nginx  &>/dev/null && web_user="nginx"
@@ -120,8 +117,8 @@ install_allinone() {
     chmod -R 755 "$target"
     ok "Módulo copiado para ${target} (owner: ${web_user})"
 
-    step "2/4" "Criando tabelas no banco de dados..."
-    mysql -h "$db_host" -u "$db_user" -p"$db_pass" "$db_name" < "${MODULE_SRC}/sql/schema.sql" \
+    step "2/4" "Criando tabelas no banco de dados PostgreSQL..."
+    PGPASSWORD="$db_pass" psql -h "$db_host" -U "$db_user" -d "$db_name" -f "${MODULE_SRC}/sql/schema.sql" \
         || die "Falha ao executar schema.sql."
     ok "Tabelas criadas"
 
@@ -149,22 +146,21 @@ install_segmented() {
     [[ $EUID -ne 0 ]] && die "Este modo requer execução como root (sudo ./install.sh)"
 
     info "Execute este script no servidor do Zabbix Web."
-    info "Você precisará acessar o banco de dados remotamente."
+    info "Você precisará acessar o banco de dados PostgreSQL remotamente."
 
-    # Frontend
     local zabbix_dir="/usr/share/zabbix"
     [[ ! -f "${zabbix_dir}/index.php" ]] && zabbix_dir=$(ask "Caminho do Zabbix frontend" "/usr/share/zabbix")
     [[ ! -f "${zabbix_dir}/index.php" ]] && die "'${zabbix_dir}' não é um frontend Zabbix válido."
 
     local db_host db_user db_pass db_name db_port
-    db_host=$(ask "Host do banco de dados (IP ou hostname)" "192.168.1.100")
-    db_port=$(ask "Porta do banco" "3306")
+    db_host=$(ask "Host do banco de dados PostgreSQL (IP ou hostname)" "192.168.1.100")
+    db_port=$(ask "Porta do banco" "5432")
     db_user=$(ask "Usuário do banco" "zabbix")
     read -rsp "  ${YELLOW}?${NC} Senha do banco: " db_pass; echo
     db_name=$(ask "Nome do banco" "zabbix")
 
     step "1/4" "Testando conectividade com o banco remoto..."
-    mysql -h "$db_host" -P "$db_port" -u "$db_user" -p"$db_pass" "$db_name" -e "SELECT 1;" &>/dev/null \
+    PGPASSWORD="$db_pass" psql -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" -c "SELECT 1;" &>/dev/null \
         || die "Não foi possível conectar ao banco ${db_host}:${db_port}. Verifique credenciais e firewall."
     ok "Conexão com banco remoto OK"
 
@@ -180,8 +176,8 @@ install_segmented() {
     chmod -R 755 "$target"
     ok "Módulo copiado (owner: ${web_user})"
 
-    step "3/4" "Criando tabelas no banco remoto..."
-    mysql -h "$db_host" -P "$db_port" -u "$db_user" -p"$db_pass" "$db_name" < "${MODULE_SRC}/sql/schema.sql" \
+    step "3/4" "Criando tabelas no banco remoto PostgreSQL..."
+    PGPASSWORD="$db_pass" psql -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" -f "${MODULE_SRC}/sql/schema.sql" \
         || die "Falha ao executar schema.sql."
     ok "Tabelas criadas no banco remoto"
 
@@ -232,4 +228,3 @@ case "$MODO" in
     3) install_segmented   ;;
     *) die "Opção inválida: $MODO" ;;
 esac
-
