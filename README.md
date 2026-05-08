@@ -34,9 +34,11 @@ Sem dependências externas, sem agentes extras — apenas PHP e o banco de dados
 
 ## Pré-requisitos
 
-- Zabbix **7.0+** (compatível com 6.4+)
-- PostgreSQL **13+**
-- PHP **8.0+** com extensão **`pdo_pgsql`**
+| Componente | Versão mínima |
+|---|---|
+| Zabbix | 7.0+ (compatível com 6.4+) |
+| PostgreSQL | 13+ |
+| PHP | 8.0+ com extensão `pdo_pgsql` |
 
 ```bash
 # Verificar se a extensão PDO PostgreSQL está habilitada
@@ -51,94 +53,132 @@ php -m | grep pdo_pgsql
 
 ```bash
 git clone https://github.com/Oblivionimous/zabbix-report-module.git
-cd zabbix-report-module
 ```
 
-### 2. Copiar o módulo para o Zabbix
+### 2. Copiar o módulo para o diretório do Zabbix
 
-<details>
-<summary><b>Docker / Docker Compose</b></summary>
+O módulo deve ficar dentro do diretório `modules` do frontend Zabbix, com o nome `TurnosNocReport`.
 
 ```bash
-docker cp . SEU_CONTAINER_WEB:/usr/share/zabbix/modules/TurnosNocReport/
-docker exec --user root SEU_CONTAINER_WEB \
-    chown -R www-data:www-data /usr/share/zabbix/modules/TurnosNocReport
+# Localizar o diretório do frontend Zabbix (geralmente um dos abaixo)
+ls /usr/share/zabbix/modules/
+
+# Copiar o módulo
+cp -r zabbix-report-module /usr/share/zabbix/modules/TurnosNocReport
 ```
 
-</details>
-
-<details>
-<summary><b>All-in-One (Zabbix + DB + Web na mesma VM)</b></summary>
+### 3. Aplicar permissões
 
 ```bash
-sudo cp -r . /usr/share/zabbix/modules/TurnosNocReport
-sudo chown -R www-data:www-data /usr/share/zabbix/modules/TurnosNocReport
+chown -R www-data:www-data /usr/share/zabbix/modules/TurnosNocReport
+chmod -R 755 /usr/share/zabbix/modules/TurnosNocReport
 ```
 
-</details>
+> Se o seu servidor web usa outro usuário (ex: `apache` ou `nginx`), substitua `www-data` pelo usuário correto.
 
-<details>
-<summary><b>Segmentado (Web e banco em servidores distintos)</b></summary>
+### 4. Obter as configurações do banco de dados
 
-No servidor do **Zabbix Web**:
+O Zabbix armazena as configurações do banco no arquivo `zabbix_server.conf`:
 
 ```bash
-sudo cp -r . /usr/share/zabbix/modules/TurnosNocReport
-sudo chown -R www-data:www-data /usr/share/zabbix/modules/TurnosNocReport
+grep -E "^DB" /etc/zabbix/zabbix_server.conf
 ```
 
-</details>
+Exemplo de saída:
+```
+DBHost=localhost
+DBName=zabbix
+DBUser=zabbix
+DBPassword=********
+DBPort=5432
+```
 
-Ou use o instalador interativo:
+### 5. Criar as tabelas no PostgreSQL
 
 ```bash
-chmod +x scripts/install.sh
-sudo ./scripts/install.sh
+PGPASSWORD=SUA_SENHA psql -h SEU_HOST -p SUA_PORTA -U SEU_USUARIO -d zabbix \
+    -f /usr/share/zabbix/modules/TurnosNocReport/sql/schema.sql
 ```
 
-### 3. Criar as tabelas no banco de dados PostgreSQL
-
-```bash
-# Nativo
-psql -U zabbix -d zabbix -f sql/schema.sql
-
-# Docker
-docker exec -i SEU_CONTAINER_DB \
-    psql -U zabbix -d zabbix -f /dev/stdin < sql/schema.sql
+Saída esperada:
+```
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
 ```
 
-### 4. Ativar no Zabbix
+### 6. Ativar o módulo no Zabbix
 
-1. Acesse **Administration → General → Modules**
+1. Acesse **Administração → Geral → Módulos**
 2. Clique em **"Scan directory"**
-3. Habilite **"Relatório Repasse de Plantão"**
-4. Acesse **Reports → Repasse Plantão**
+3. Localize **"Relatório Repasse de Plantão"** e clique em **Ativar**
+4. O módulo aparecerá em **Relatórios → Repasse Plantão**
 
 ---
 
 ## Presença de Analistas (opcional)
 
-O rastreamento de presença usa um script cron que consulta a API do Zabbix a cada 5 minutos.
+O rastreamento de presença usa um script cron que consulta a API do Zabbix a cada 5 minutos e registra quais analistas estavam online durante cada turno.
 
-1. Edite as credenciais em `scripts/cron_presence_tracker.php`:
+### 1. Criar usuário dedicado no Zabbix
 
-   ```php
-   define('ZABBIX_API_URL', 'http://localhost/api_jsonrpc.php');
-   define('ZABBIX_USER',    'Admin');
-   define('ZABBIX_PASS',    'sua_senha');
-   define('DB_HOST',        'localhost');
-   define('DB_PORT',        5432);
-   define('DB_NAME',        'zabbix');
-   define('DB_USER',        'zabbix');
-   define('DB_PASS',        'sua_senha_db');
-   ```
+Crie um usuário exclusivo para o tracker para não usar o Admin principal:
 
-2. Adicione ao cron:
+- Acesse **Administração → Usuários → Criar usuário**
+- **Username:** `noc-tracker` (ou nome de sua preferência)
+- **Role:** `Super admin role` *(necessário para listar todos os usuários via API)*
+- Defina uma senha forte
 
-   ```bash
-   # /etc/cron.d/turnos-presence
-   */5 * * * * www-data php /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php
-   ```
+### 2. Configurar o script
+
+```bash
+nano /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php
+```
+
+Ajuste as constantes no início do arquivo:
+
+```php
+define('ZABBIX_API_URL', 'http://SEU_ZABBIX/api_jsonrpc.php');
+define('ZABBIX_USER',    'noc-tracker');
+define('ZABBIX_PASS',    'SENHA_DO_USUARIO_API');
+define('DB_HOST',        'SEU_HOST_DB');
+define('DB_PORT',        5432);              // ajuste se usar porta diferente
+define('DB_NAME',        'zabbix');
+define('DB_USER',        'SEU_USUARIO_DB');
+define('DB_PASS',        'SENHA_DO_BANCO');
+```
+
+### 3. Testar manualmente antes de agendar
+
+```bash
+php /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php
+```
+
+Saída esperada:
+```
+[YYYY-MM-DD HH:MM:SS] === Presence Tracker Start ===
+[YYYY-MM-DD HH:MM:SS] Login OK (token: xxxxxxxx...)
+[YYYY-MM-DD HH:MM:SS] Total de usuários encontrados: X
+[YYYY-MM-DD HH:MM:SS] Resultado: X inseridos, X atualizados.
+[YYYY-MM-DD HH:MM:SS] === Presence Tracker End ===
+```
+
+### 4. Adicionar ao cron
+
+```bash
+nano /etc/cron.d/turnos-presence
+```
+
+Conteúdo do arquivo:
+```
+*/5 * * * * www-data php /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php >> /var/log/zabbix_presence.log 2>&1
+```
 
 ---
 
