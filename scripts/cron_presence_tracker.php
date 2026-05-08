@@ -91,9 +91,7 @@ logMsg("Login OK (token: " . substr($auth, 0, 8) . "...)");
 
 // 2. Buscar usuários com informação de sessão
 $usersResp = zabbixApi('user.get', [
-    'output'        => ['userid', 'username', 'name', 'surname'],
-    'selectUsrgrps' => ['name'],
-    'getAccess'     => ['gui_access', 'users_status'],
+    'output' => ['userid', 'username', 'name', 'surname'],
 ], $auth);
 
 if (!isset($usersResp['result'])) {
