@@ -2,23 +2,21 @@
 <?php
 date_default_timezone_set('America/Sao_Paulo');
 
-/**
- * ============================================================
- *  Cron Presence Tracker — Coleta de Sessões Ativas do Zabbix
- * ============================================================
- *
- * Este script consulta a API do Zabbix para obter usuários com
- * sessões ativas e grava na tabela custom_user_sessions.
- *
- * Configurar no crontab do servidor Zabbix (/etc/cron.d/turnos-presence):
- *
- *   MAILTO=""
- *   */5 * * * * TZ="America/Sao_Paulo" /usr/bin/php \
- *     /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php \
- *     >> /var/log/presence_tracker.log 2>&1
- *
- * Variáveis de configuração abaixo:
- */
+// ============================================================
+//  Cron Presence Tracker — Coleta de Sessões Ativas do Zabbix
+// ============================================================
+//
+// Este script consulta a API do Zabbix para obter usuários com
+// sessões ativas e grava na tabela custom_user_sessions.
+//
+// Configurar no crontab do servidor Zabbix (/etc/cron.d/turnos-presence):
+//
+//   MAILTO=""
+//   */5 * * * * TZ="America/Sao_Paulo" /usr/bin/php \
+//     /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php \
+//     >> /var/log/presence_tracker.log 2>&1
+//
+// Variáveis de configuração abaixo:
 
 // ── CONFIGURAÇÃO ────────────────────────────────────────────
 define('ZABBIX_API_URL', 'https://localhost/api_jsonrpc.php');
