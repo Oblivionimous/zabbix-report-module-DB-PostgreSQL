@@ -131,10 +131,11 @@ try {
 }
 
 // 4. Para cada usuário, verificar sessão ativa na tabela 'sessions' do Zabbix
-$now        = date('Y-m-d H:i:s');
-$fiveMinAgo = date('Y-m-d H:i:s', strtotime('-5 minutes'));
-$inserted   = 0;
-$updated    = 0;
+// Considera ativa apenas sessão com lastaccess nos últimos 15 minutos
+$staleThreshold = time() - 900;
+$fiveMinAgo     = date('Y-m-d H:i:s', strtotime('-5 minutes'));
+$inserted       = 0;
+$updated        = 0;
 
 foreach ($users as $user) {
     $userid   = (int)$user['userid'];
@@ -154,7 +155,7 @@ foreach ($users as $user) {
         continue;
     }
 
-    if ($sess) {
+    if ($sess && (int)$sess['lastaccess'] >= $staleThreshold) {
         $lastaccess = date('Y-m-d H:i:s', (int)$sess['lastaccess']);
 
         $checkStmt = $db->prepare(
@@ -170,11 +171,12 @@ foreach ($users as $user) {
             $updStmt->execute([$lastaccess, $existing['id']]);
             $updated++;
         } else {
+            // session_start = lastaccess real da sessão (não $now) para evitar tempo negativo
             $insStmt = $db->prepare(
                 "INSERT INTO custom_user_sessions (userid, username, name, session_start, lastaccess)
                  VALUES (?, ?, ?, ?, ?)"
             );
-            $insStmt->execute([$userid, $username, $fullname, $now, $lastaccess]);
+            $insStmt->execute([$userid, $username, $fullname, $lastaccess, $lastaccess]);
             $inserted++;
         }
     }

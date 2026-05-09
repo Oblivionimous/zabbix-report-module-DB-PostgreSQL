@@ -172,15 +172,26 @@ class TurnosReportView extends CController {
     private function queryPresence(\PDO $db, int $s, int $e): array {
         $ds = date('Y-m-d H:i:s', $s);
         $de = date('Y-m-d H:i:s', $e);
+        // Overlap: analista aparece no turno se esteve ativo em qualquer momento da janela.
+        // Duração recortada ao turno: LEAST(lastaccess, fim) - GREATEST(session_start, inicio)
         $sql = "SELECT cus.userid, cus.username, cus.name AS fullname,
-                MIN(cus.session_start) AS first_seen, MAX(cus.lastaccess) AS last_seen,
-                EXTRACT(EPOCH FROM (MAX(cus.lastaccess) - MIN(cus.session_start)))::integer / 60 AS online_minutes
+                MIN(cus.session_start) AS first_seen,
+                MAX(cus.lastaccess)    AS last_seen,
+                GREATEST(
+                    EXTRACT(EPOCH FROM (
+                        LEAST(MAX(cus.lastaccess), CAST(? AS TIMESTAMP)) -
+                        GREATEST(MIN(cus.session_start), CAST(? AS TIMESTAMP))
+                    ))::integer / 60,
+                    0
+                ) AS online_minutes
             FROM custom_user_sessions cus
-            WHERE cus.lastaccess BETWEEN ? AND ?
-            GROUP BY cus.userid, cus.username, cus.name ORDER BY first_seen ASC";
+            WHERE cus.session_start <= CAST(? AS TIMESTAMP)
+              AND cus.lastaccess    >= CAST(? AS TIMESTAMP)
+            GROUP BY cus.userid, cus.username, cus.name
+            ORDER BY first_seen ASC";
         try {
             $stmt = $db->prepare($sql);
-            $stmt->execute([$ds, $de]);
+            $stmt->execute([$de, $ds, $de, $ds]);
             return $stmt->fetchAll();
         } catch (\Exception $ex) { return []; }
     }
