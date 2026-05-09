@@ -1,5 +1,7 @@
 #!/usr/bin/env php
 <?php
+date_default_timezone_set('America/Sao_Paulo');
+
 /**
  * ============================================================
  *  Cron Presence Tracker — Coleta de Sessões Ativas do Zabbix
@@ -8,18 +10,24 @@
  * Este script consulta a API do Zabbix para obter usuários com
  * sessões ativas e grava na tabela custom_user_sessions.
  *
- * Configurar no crontab do servidor Zabbix:
- *   * * * * * /usr/bin/php /path/to/cron_presence_tracker.php >> /var/log/presence_tracker.log 2>&1
+ * Configurar no crontab do servidor Zabbix (/etc/cron.d/turnos-presence):
+ *
+ *   MAILTO=""
+ *   */5 * * * * TZ="America/Sao_Paulo" /usr/bin/php \
+ *     /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php \
+ *     >> /var/log/presence_tracker.log 2>&1
  *
  * Variáveis de configuração abaixo:
  */
 
 // ── CONFIGURAÇÃO ────────────────────────────────────────────
-define('ZABBIX_API_URL', 'http://localhost/api_jsonrpc.php');  // URL da API
-define('ZABBIX_USER',    'Admin');                              // Usuário admin
-define('ZABBIX_PASS',    'zabbix');                             // Senha
-define('DB_HOST',        'localhost');                           // Host do PostgreSQL
-define('DB_PORT',        5432);                                 // Porta
+define('ZABBIX_API_URL', 'https://localhost/api_jsonrpc.php');
+// Autenticação: preencha ZABBIX_TOKEN (preferido) OU ZABBIX_USER + ZABBIX_PASS
+define('ZABBIX_TOKEN',   '');                                    // API Token (preferido)
+define('ZABBIX_USER',    '');                                    // Usuário (fallback)
+define('ZABBIX_PASS',    '');                                    // Senha (fallback)
+define('DB_HOST',        'localhost');                            // Host do PostgreSQL (TCP)
+define('DB_PORT',        5432);                                  // Porta (verificar DBPort em zabbix_server.conf)
 define('DB_NAME',        'zabbix');                              // Database
 define('DB_USER',        'zabbix');                              // Usuário DB
 define('DB_PASS',        '');                                    // Senha DB
@@ -45,14 +53,17 @@ function zabbixApi(string $method, array $params, ?string $auth = null): array {
         CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
         CURLOPT_TIMEOUT        => 15,
         CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false,  // necessário quando certificado não cobre 'localhost'
     ]);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr  = curl_error($ch);
     curl_close($ch);
 
     if ($response === false || $httpCode !== 200) {
-        logMsg("API Error: HTTP $httpCode");
+        $detail = $curlErr ? " — $curlErr" : '';
+        logMsg("API Error: HTTP $httpCode$detail");
         return ['error' => 'HTTP Error'];
     }
 
@@ -68,26 +79,33 @@ function logMsg(string $msg): void {
 
 logMsg('=== Presence Tracker Start ===');
 
-// 1. Login na API (Zabbix 7.x usa 'username', 6.x usa 'user')
-$loginResp = zabbixApi('user.login', [
-    'username' => ZABBIX_USER,
-    'password' => ZABBIX_PASS,
-]);
+// 1. Autenticação: API Token direto ou user.login com usuário/senha
+$auth      = null;
+$usedToken = false;
 
-if (isset($loginResp['error'])) {
+if (defined('ZABBIX_TOKEN') && ZABBIX_TOKEN !== '') {
+    $auth      = ZABBIX_TOKEN;
+    $usedToken = true;
+    logMsg('Usando API token.');
+} else {
+    // Zabbix 7.x usa 'username', 6.x usa 'user' — tenta os dois
     $loginResp = zabbixApi('user.login', [
-        'user'     => ZABBIX_USER,
+        'username' => ZABBIX_USER,
         'password' => ZABBIX_PASS,
     ]);
+    if (isset($loginResp['error'])) {
+        $loginResp = zabbixApi('user.login', [
+            'user'     => ZABBIX_USER,
+            'password' => ZABBIX_PASS,
+        ]);
+    }
+    if (!isset($loginResp['result'])) {
+        logMsg('CRITICAL: Falha no login da API. Verifique credenciais.');
+        exit(1);
+    }
+    $auth = $loginResp['result'];
+    logMsg("Login OK (token: " . substr($auth, 0, 8) . "...)");
 }
-
-if (!isset($loginResp['result'])) {
-    logMsg('CRITICAL: Falha no login da API. Verifique credenciais.');
-    exit(1);
-}
-
-$auth = $loginResp['result'];
-logMsg("Login OK (token: " . substr($auth, 0, 8) . "...)");
 
 // 2. Buscar usuários com informação de sessão
 $usersResp = zabbixApi('user.get', [
@@ -102,9 +120,9 @@ if (!isset($usersResp['result'])) {
 $users = $usersResp['result'];
 logMsg("Total de usuários encontrados: " . count($users));
 
-// 3. Conectar ao PostgreSQL
+// 3. Conectar ao PostgreSQL via TCP (host=localhost garante scram-sha-256 em vez de peer auth)
 try {
-    $dsn = 'pgsql:host='.DB_HOST.';port='.DB_PORT.';dbname='.DB_NAME;
+    $dsn = 'pgsql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME;
     $db  = new PDO($dsn, DB_USER, DB_PASS, [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -114,7 +132,7 @@ try {
     exit(1);
 }
 
-// 4. Para cada usuário, verificar se tem sessão ativa na tabela 'sessions' do Zabbix
+// 4. Para cada usuário, verificar sessão ativa na tabela 'sessions' do Zabbix
 $now        = date('Y-m-d H:i:s');
 $fiveMinAgo = date('Y-m-d H:i:s', strtotime('-5 minutes'));
 $inserted   = 0;
@@ -126,7 +144,6 @@ foreach ($users as $user) {
     $fullname = trim(($user['name'] ?? '') . ' ' . ($user['surname'] ?? ''));
     if (empty($fullname)) $fullname = $username;
 
-    // Consultar sessões ativas do Zabbix diretamente na tabela sessions
     try {
         $sessStmt = $db->prepare(
             "SELECT sessionid, lastaccess FROM sessions
@@ -142,7 +159,6 @@ foreach ($users as $user) {
     if ($sess) {
         $lastaccess = date('Y-m-d H:i:s', (int)$sess['lastaccess']);
 
-        // Verificar se já temos registro recente (últimos 5 min) para não duplicar
         $checkStmt = $db->prepare(
             "SELECT id FROM custom_user_sessions
              WHERE userid = ? AND lastaccess >= ?
@@ -168,8 +184,10 @@ foreach ($users as $user) {
 
 $db = null;
 
-// 5. Logout da API
-zabbixApi('user.logout', [], $auth);
+// 5. Logout da API (apenas para sessões criadas via user.login, não para API token)
+if (!$usedToken) {
+    zabbixApi('user.logout', [], $auth);
+}
 
 logMsg("Resultado: $inserted inseridos, $updated atualizados.");
 logMsg('=== Presence Tracker End ===');
