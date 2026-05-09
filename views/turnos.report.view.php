@@ -299,7 +299,7 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
             <td><?= htmlspecialchars($p['username']) ?></td>
             <td class="td-mono"><?= $p['first_seen'] ?></td>
             <td class="td-mono"><?= $p['last_seen'] ?></td>
-            <td class="td-bold"><?= rp_duration((int)$p['online_minutes'] * 60) ?></td>
+            <td class="td-bold"><?= (int)$p['online_minutes'] > 0 ? rp_duration((int)$p['online_minutes'] * 60) : '—' ?></td>
         </tr>
         <?php endforeach; ?>
         </tbody></table>
