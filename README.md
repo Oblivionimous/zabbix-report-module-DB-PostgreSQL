@@ -3,8 +3,13 @@
 Módulo frontend **100% nativo** do Zabbix 7.0 para relatório automático de repasse de plantão NOC.
 Sem dependências externas, sem agentes extras — apenas PHP e o banco de dados PostgreSQL do próprio Zabbix.
 
-> **Fork** de [JohnnyIver/zabbix-report-module](https://github.com/JohnnyIver/zabbix-report-module)
-> adaptado para **PostgreSQL**, **Zabbix 7.0** e turnos de NOC **06h–18h**.
+> **Fork** do projeto original [JohnnyIver/zabbix-report-module](https://github.com/JohnnyIver/zabbix-report-module),
+> adaptado e evoluído por [Mauro Paiva](https://www.linkedin.com/in/mauro-paiva-98b881106/) com foco em:
+>
+> - **PostgreSQL** como banco de dados (em substituição ao MySQL original)
+> - **Autenticação via API Token** do Zabbix (sem necessidade de usuário/senha no script)
+> - Turnos de NOC **06h–18h** e melhorias operacionais para ambientes de plantão 24x7
+>
 > Veja [CHANGELOG.md](CHANGELOG.md) para o detalhamento completo das alterações.
 
 ![Zabbix](https://img.shields.io/badge/Zabbix-7.0-red?logo=zabbix)
