@@ -17,6 +17,8 @@ Sem dependências externas, sem agentes extras — apenas PHP e o banco de dados
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13%2B-336791?logo=postgresql&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+> Documentação técnica detalhada (arquitetura, código, queries SQL, fluxos): [DOCUMENTATION.md](DOCUMENTATION.md)
+
 ---
 
 ## Visão do Projeto
