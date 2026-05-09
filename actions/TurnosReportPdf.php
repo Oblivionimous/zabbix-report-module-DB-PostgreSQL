@@ -69,7 +69,7 @@ class TurnosReportPdf extends CController {
 
     protected function doAction(): void {
         $date  = $this->getInput('date', date('Y-m-d'));
-        $shift = $this->getInput('shift', '24h');
+        $shift = $this->getInput('shift', 'plantao_dia');
 
         $limitStr = $this->getInput('limit', '5');
         $limit = $limitStr === 'all' ? 0 : (int)$limitStr;

@@ -44,7 +44,7 @@ class TurnosNotesSave extends CController {
         header('Content-Type: application/json; charset=utf-8');
 
         $note       = trim($this->getInput('note', ''));
-        $shift      = trim($this->getInput('shift', '24h'));
+        $shift      = trim($this->getInput('shift', 'plantao_dia'));
         $shift_date = trim($this->getInput('shift_date', date('Y-m-d')));
 
         if (empty($note)) {

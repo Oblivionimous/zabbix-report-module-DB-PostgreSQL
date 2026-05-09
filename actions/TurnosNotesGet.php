@@ -39,7 +39,7 @@ class TurnosNotesGet extends CController {
     protected function doAction(): void {
         header('Content-Type: application/json; charset=utf-8');
 
-        $shift      = $_GET['shift']      ?? $_POST['shift']      ?? '24h';
+        $shift      = $_GET['shift']      ?? $_POST['shift']      ?? 'plantao_dia';
         $shift_date = $_GET['shift_date'] ?? $_POST['shift_date'] ?? date('Y-m-d');
 
         $db = $this->getDb();

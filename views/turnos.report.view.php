@@ -82,11 +82,11 @@ $calendar_json = json_encode($data['calendar']);
             <input type="date" name="date" class="rp-nh-input" value="<?= $date ?>" onchange="this.form.submit()">
             <select name="shift" class="rp-nh-input" onchange="this.form.submit()">
                 <?php foreach ([
-                    '24h'         => '24 Horas (00h–23h)',
                     'plantao_dia' => 'Plantão Dia (06h–18h)',
                     'manha'       => 'Manhã (06h–12h)',
                     'tarde'       => 'Tarde (12h–18h)',
                     'noite'       => 'Noite (18h–06h)',
+                    '24h'         => '24 Horas (00h–23h)',
                 ] as $k=>$v): ?>
                     <option value="<?= $k ?>" <?= $k===$shift?'selected':'' ?>><?= $v ?></option>
                 <?php endforeach; ?>
@@ -459,7 +459,7 @@ function toggleSevChart() {
         const tooltip = dayLabel+': '+cnt+' eventos'+(crit>0?' ('+crit+' críticos)':'')+'\nClique para ver relatório';
         html += monthLabel +
             '<div class="rp-hm-cell'+(isSelected?' rp-hm-selected':'')+'" style="background:'+color+';cursor:pointer;'+border+'" '+
-            'title="'+tooltip+'" onclick="window.location.href=\'zabbix.php?action=turnos.report.view&date='+key+'&shift=24h\'">' +
+            'title="'+tooltip+'" onclick="window.location.href=\'zabbix.php?action=turnos.report.view&date='+key+'&shift=plantao_dia\'">' +
             '<span class="rp-hm-day">'+String(dayNum).padStart(2,'0')+'</span></div>';
     }
     html += '</div>';
