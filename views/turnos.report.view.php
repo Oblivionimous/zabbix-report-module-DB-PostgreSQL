@@ -218,10 +218,10 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
             <td class="td-mono"><?= date('d/m H:i', (int)$r['clock']) ?></td>
             <td><span class="rp-sev sev-<?= rp_sevClass((int)$r['severity']) ?>"><?= rp_sevLabel((int)$r['severity']) ?></span></td>
             <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['host']) ?>" target="_blank" class="rp-host-link"><?= htmlspecialchars($r['host']) ?> <i class="fas fa-external-link-alt"></i></a></td>
-            <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['trigger_desc']) ?>" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
+            <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_eventids[]=<?= $r['eventid'] ?>" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
             <td class="td-bold"><?= rp_duration((int)$r['age_seconds']) ?></td>
             <td class="td-center"><?= $r['has_ack'] ? '<i class="fas fa-check-circle rp-ack-yes"></i>' : '<i class="fas fa-times-circle rp-ack-no"></i>' ?></td>
-            <td class="td-center"><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['trigger_desc']) ?>" target="_blank" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
+            <td class="td-center"><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_eventids[]=<?= $r['eventid'] ?>" target="_blank" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
         </tr>
         <?php endforeach; ?>
         </tbody></table>
@@ -240,8 +240,8 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
             <td class="td-mono"><?= date('H:i:s', (int)$r['clock']) ?></td>
             <td><span class="rp-sev sev-<?= rp_sevClass((int)$r['severity']) ?>"><?= rp_sevLabel((int)$r['severity']) ?></span></td>
             <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['host']) ?>" target="_blank" class="rp-host-link"><?= htmlspecialchars($r['host']) ?></a></td>
-            <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['trigger_desc']) ?>" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
-            <td class="td-center"><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['trigger_desc']) ?>" target="_blank" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
+            <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_eventids[]=<?= $r['eventid'] ?>" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
+            <td class="td-center"><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_eventids[]=<?= $r['eventid'] ?>" target="_blank" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
         </tr>
         <?php endforeach; ?>
         </tbody></table>
