@@ -17,7 +17,13 @@ function rp_duration(int $s): string {
     return floor($s/3600).'h '.floor(($s%3600)/60).'m';
 }
 function rp_shiftLabel(string $sh): string {
-    return ['manha'=>'Manhã (07h–13h)','tarde'=>'Tarde (13h–19h)','noite'=>'Noite (19h–07h)','24h'=>'24 Horas'][$sh] ?? $sh;
+    return [
+        'manha'       => 'Manhã (06h–12h)',
+        'tarde'       => 'Tarde (12h–18h)',
+        'plantao_dia' => 'Plantão Dia (06h–18h)',
+        'noite'       => 'Noite (18h–06h)',
+        '24h'         => '24 Horas',
+    ][$sh] ?? $sh;
 }
 function rp_probLink(?string $h=null): string {
     $u = 'zabbix.php?action=problem.view&filter_set=1&filter_show=3';
@@ -75,7 +81,13 @@ $calendar_json = json_encode($data['calendar']);
             <input type="hidden" name="action" value="turnos.report.view">
             <input type="date" name="date" class="rp-nh-input" value="<?= $date ?>" onchange="this.form.submit()">
             <select name="shift" class="rp-nh-input" onchange="this.form.submit()">
-                <?php foreach (['24h'=>'24 Horas (00h–23h)','manha'=>'Manhã (07h–13h)','tarde'=>'Tarde (13h–19h)','noite'=>'Noite (19h–07h)'] as $k=>$v): ?>
+                <?php foreach ([
+                    'plantao_dia' => 'Plantão Dia (06h–18h)',
+                    'manha'       => 'Manhã (06h–12h)',
+                    'tarde'       => 'Tarde (12h–18h)',
+                    'noite'       => 'Noite (18h–06h)',
+                    '24h'         => '24 Horas (00h–23h)',
+                ] as $k=>$v): ?>
                     <option value="<?= $k ?>" <?= $k===$shift?'selected':'' ?>><?= $v ?></option>
                 <?php endforeach; ?>
             </select>
@@ -298,6 +310,7 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
 <div class="rp-card">
     <div class="rp-card-head"><i class="fas fa-book-open"></i> Diário de Bordo</div>
     <div class="rp-card-body">
+        <?php if ($date === date('Y-m-d')): ?>
         <form id="turnosNoteForm" class="rp-note-form">
             <div class="rp-note-meta">
                 <span><strong>Analista:</strong> <?= htmlspecialchars($data['current_fullname']) ?></span>
@@ -310,6 +323,12 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
                 <span id="noteSaveStatus" class="rp-note-status"></span>
             </div>
         </form>
+        <?php else: ?>
+        <div class="rp-note-meta" style="padding:12px 0;color:var(--rp-text-muted,#8899aa);">
+            <i class="fas fa-lock" style="margin-right:6px;"></i>
+            Comentários bloqueados — apenas o dia atual permite novas anotações.
+        </div>
+        <?php endif; ?>
         <?php if (!empty($data['notes'])): ?>
         <div class="rp-notes-list">
             <div class="rp-notes-title">Notas Anteriores</div>
@@ -447,7 +466,7 @@ function toggleSevChart() {
         const tooltip = dayLabel+': '+cnt+' eventos'+(crit>0?' ('+crit+' críticos)':'')+'\nClique para ver relatório';
         html += monthLabel +
             '<div class="rp-hm-cell'+(isSelected?' rp-hm-selected':'')+'" style="background:'+color+';cursor:pointer;'+border+'" '+
-            'title="'+tooltip+'" onclick="window.location.href=\'zabbix.php?action=turnos.report.view&date='+key+'&shift=24h\'">' +
+            'title="'+tooltip+'" onclick="window.location.href=\'zabbix.php?action=turnos.report.view&date='+key+'&shift=plantao_dia\'">' +
             '<span class="rp-hm-day">'+String(dayNum).padStart(2,'0')+'</span></div>';
     }
     html += '</div>';

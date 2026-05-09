@@ -18,18 +18,19 @@ class TurnosNotesGet extends CController {
         return true;
     }
 
-    private function getDb(): ?\mysqli {
+    private function getDb(): ?\PDO {
         try {
-            $server = $GLOBALS['DB']['SERVER']   ?? 'localhost';
-            $port   = $GLOBALS['DB']['PORT']     ?? '3306';
+            $host   = $GLOBALS['DB']['SERVER']   ?? 'localhost';
+            $port   = $GLOBALS['DB']['PORT']     ?? '5432';
             $dbname = $GLOBALS['DB']['DATABASE'] ?? 'zabbix';
             $user   = $GLOBALS['DB']['USER']     ?? 'zabbix';
             $pass   = $GLOBALS['DB']['PASSWORD'] ?? '';
 
-            mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-            $mysqli = new \mysqli($server, $user, $pass, $dbname, (int)$port);
-            $mysqli->set_charset('utf8mb4');
-            return $mysqli;
+            $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
+            return new \PDO($dsn, $user, $pass, [
+                \PDO::ATTR_ERRMODE            => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]);
         } catch (\Exception $e) {
             return null;
         }
@@ -38,7 +39,7 @@ class TurnosNotesGet extends CController {
     protected function doAction(): void {
         header('Content-Type: application/json; charset=utf-8');
 
-        $shift      = $_GET['shift']      ?? $_POST['shift']      ?? '24h';
+        $shift      = $_GET['shift']      ?? $_POST['shift']      ?? 'plantao_dia';
         $shift_date = $_GET['shift_date'] ?? $_POST['shift_date'] ?? date('Y-m-d');
 
         $db = $this->getDb();
@@ -54,21 +55,15 @@ class TurnosNotesGet extends CController {
                  WHERE shift_date = ? AND shift_name = ?
                  ORDER BY created_at DESC"
             );
-            $stmt->bind_param('ss', $shift_date, $shift);
-            $stmt->execute();
-            $result = $stmt->get_result();
-
-            $notes = [];
-            while ($row = $result->fetch_assoc()) {
-                $notes[] = $row;
-            }
+            $stmt->execute([$shift_date, $shift]);
+            $notes = $stmt->fetchAll();
 
             echo json_encode(['success' => true, 'notes' => $notes]);
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage(), 'notes' => []]);
         }
 
-        $db->close();
+        $db = null;
         die();
     }
 }
