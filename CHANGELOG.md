@@ -1,5 +1,104 @@
 # Changelog
 
+## [2.2.0] — Hardening do cron_presence_tracker (homologação)
+
+> Branch: `claude/update-cron-tracker-docs-9syjZ`
+> Ambiente validado: `dcsaanzabbixh` — Zabbix Homologação
+
+Conjunto de correções identificadas durante a implantação em ambiente de homologação.
+Todas as alterações são retrocompatíveis com instalações existentes.
+
+---
+
+### Suporte a API Token no cron_presence_tracker
+
+O script agora aceita **API Token** como método de autenticação preferencial, eliminando a
+necessidade de manter credenciais de usuário/senha no arquivo.
+
+```php
+// Novo — preencha ZABBIX_TOKEN e deixe USER/PASS vazios
+define('ZABBIX_TOKEN', 'seu-token-aqui');
+define('ZABBIX_USER',  '');
+define('ZABBIX_PASS',  '');
+```
+
+O script detecta automaticamente qual método usar: se `ZABBIX_TOKEN` não estiver vazio, usa o
+token diretamente; caso contrário faz fallback para `user.login` com usuário/senha (comportamento
+anterior, compatível com Zabbix 6.x e 7.x).
+
+O `user.logout` passou a ser chamado **somente** em sessões criadas via `user.login` — tokens de
+API não precisam (e não devem) ser invalidados pelo script.
+
+---
+
+### Correção de SSL no PHP CLI
+
+Adicionado `CURLOPT_SSL_VERIFYHOST => false` ao bloco de opções do cURL.
+
+O PHP CLI aplica validação de SAN mesmo com `CURLOPT_SSL_VERIFYPEER => false`. Quando o
+certificado não cobre `localhost`, isso causava `HTTP 0` silencioso no terminal e bloqueava
+toda a execução. O `curl` de linha de comando não apresentava o mesmo comportamento, dificultando
+o diagnóstico.
+
+---
+
+### Logging de erro do cURL
+
+O erro textual do cURL (`curl_error()`) passou a ser incluído na mensagem de log:
+
+```
+[2026-05-08 21:24:17] API Error: HTTP 0 — SSL: no alternative certificate subject name matches target host name 'localhost'
+```
+
+---
+
+### Correção de timezone
+
+Adicionado `date_default_timezone_set('America/Sao_Paulo')` no topo do script.
+
+O PHP CLI herda UTC por padrão, independente do timezone do sistema operacional. Isso causava
+registros com horário 3 horas adiantado e exibição de **Tempo Online negativo** no módulo.
+
+A linha do cron foi atualizada para incluir `TZ="America/Sao_Paulo"` como segunda camada de
+garantia, cobrindo casos onde o `php.ini` do CLI ainda não define o timezone.
+
+---
+
+### Correção do cron — formato e variável TZ
+
+O exemplo de cron no cabeçalho do script e na documentação foi corrigido:
+
+| | Antes | Depois |
+|---|---|---|
+| Arquivo | `(não existia)` | `/etc/cron.d/turnos-presence` |
+| Formato | `CMD (www-data php ...)` | entrada padrão do `/etc/cron.d/` |
+| Timezone | ausente | `TZ="America/Sao_Paulo"` na linha |
+| `MAILTO` | ausente | `MAILTO=""` (evita e-mails de log) |
+
+---
+
+### Ajuste da URL padrão e conexão TCP ao PostgreSQL
+
+| Constante | Antes | Depois |
+|---|---|---|
+| `ZABBIX_API_URL` | `http://localhost/...` | `https://localhost/...` |
+| `DB_HOST` | `localhost` | `localhost` *(explicitado — não deixar vazio)* |
+| `DB_PORT` | `5432` | `5432` *(com nota para verificar `DBPort` no `zabbix_server.conf`)* |
+
+> **DB_HOST vazio** causava conexão via socket UNIX, que falha com `peer authentication`. Definir
+> `DB_HOST=localhost` força TCP e permite autenticação `scram-sha-256`.
+
+---
+
+### Arquivos modificados
+
+| Arquivo | Alteração |
+|---|---|
+| `scripts/cron_presence_tracker.php` | Token auth, timezone, SSL, curl error log, logout condicional, cron comment |
+| `README.md` | Seção "Presença de Analistas" reescrita com API Token, troubleshooting, nota TZ |
+
+---
+
 ## [2.1.0] — Adaptação PostgreSQL + Zabbix 7.0 + Turnos NOC
 
 > Branch: `claude/postgresql-zabbix-adaptation-VkDHs`
