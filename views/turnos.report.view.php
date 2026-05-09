@@ -310,6 +310,7 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
 <div class="rp-card">
     <div class="rp-card-head"><i class="fas fa-book-open"></i> Diário de Bordo</div>
     <div class="rp-card-body">
+        <?php if ($date === date('Y-m-d')): ?>
         <form id="turnosNoteForm" class="rp-note-form">
             <div class="rp-note-meta">
                 <span><strong>Analista:</strong> <?= htmlspecialchars($data['current_fullname']) ?></span>
@@ -322,6 +323,12 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
                 <span id="noteSaveStatus" class="rp-note-status"></span>
             </div>
         </form>
+        <?php else: ?>
+        <div class="rp-note-meta" style="padding:12px 0;color:var(--rp-text-muted,#8899aa);">
+            <i class="fas fa-lock" style="margin-right:6px;"></i>
+            Comentários bloqueados — apenas o dia atual permite novas anotações.
+        </div>
+        <?php endif; ?>
         <?php if (!empty($data['notes'])): ?>
         <div class="rp-notes-list">
             <div class="rp-notes-title">Notas Anteriores</div>

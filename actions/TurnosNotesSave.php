@@ -47,6 +47,11 @@ class TurnosNotesSave extends CController {
         $shift      = trim($this->getInput('shift', 'plantao_dia'));
         $shift_date = trim($this->getInput('shift_date', date('Y-m-d')));
 
+        if ($shift_date !== date('Y-m-d')) {
+            echo json_encode(['success' => false, 'message' => 'Não é possível adicionar notas em datas anteriores.']);
+            die();
+        }
+
         if (empty($note)) {
             echo json_encode(['success' => false, 'message' => 'A nota não pode ser vazia.']);
             die();
