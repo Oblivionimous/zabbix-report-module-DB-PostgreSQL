@@ -14,6 +14,41 @@ Sem dependências externas, sem agentes extras — apenas PHP e o banco de dados
 
 ---
 
+## Visão do Projeto
+
+> *por [Richardson Miranda](https://www.linkedin.com/in/richardson-miranda-198588141/)*
+
+Este projeto nasceu como um estudo de **arquitetura de sistemas aplicada a ambientes de operação NOC**, tomando como referência o módulo open source de repasse de plantão para Zabbix ([JohnnyIver/zabbix-report-module](https://github.com/JohnnyIver/zabbix-report-module)).
+
+O problema central foi a fragilidade do processo de transição entre turnos em ambientes 24x7: perda de contexto operacional, fragmentação de informações e baixa rastreabilidade de eventos entre operadores. A proposta foi estruturar uma solução de consolidação de informações operacionais com foco em **governança, visibilidade e redução de ruído**.
+
+### Princípios de arquitetura
+
+O principal princípio adotado foi **evitar acoplamento direto ao sistema de monitoramento**, garantindo estabilidade, segurança e facilidade de manutenção. A solução foi desenhada como uma camada desacoplada — sem nenhuma alteração no core do Zabbix — sobre a infraestrutura já existente:
+
+```
+Zabbix Server  →  coleta de eventos
+Backend dedicado  →  processamento e regras de negócio do repasse
+PostgreSQL/MySQL  →  persistência (reaproveitamento da infra existente)
+Frontend nativo  →  consumo e visualização operacional
+```
+
+Outros princípios aplicados:
+
+- **Integração somente leitura** via API do Zabbix
+- **Menor privilégio** no acesso ao banco de dados
+- **Backend isolado** como camada central de processamento
+- **Controle de acesso** restrito ao grupo operacional do NOC
+
+### Aprendizado principal
+
+> Em ambientes de operação, evoluir um sistema não é apenas adicionar funcionalidades —
+> é garantir que cada nova camada preserve **estabilidade, segurança e previsibilidade operacional**.
+
+Todo o ambiente foi implementado em laboratório local, com foco exclusivo em estudo de arquitetura e integração de sistemas.
+
+---
+
 ## Funcionalidades
 
 | # | Funcionalidade | Descrição |
