@@ -1,5 +1,80 @@
 # Changelog
 
+## [2.3.0] — Correção de Presença de Analistas (09/05/2026)
+
+> Ambiente validado: `dcsaanzabbixh` — Zabbix Homologação
+
+### Problema: Tempo Online negativo
+
+O cron gravava `session_start = NOW()` (momento da execução do cron), mas `lastaccess`
+vinha da tabela `sessions` do Zabbix e podia ser horas anterior. Isso gerava
+`session_start > lastaccess`, resultando em tempo negativo (ex: `-19380s`).
+
+**Correção em `cron_presence_tracker.php`:**
+- `session_start` passa a receber o `lastaccess` real da sessão Zabbix (não `$now`)
+- Sessões com `lastaccess` há mais de 15 minutos são ignoradas, evitando contar
+  usuários com sessão obsoleta como "online"
+
+```php
+// Antes
+$insStmt->execute([$userid, $username, $fullname, $now, $lastaccess]);
+
+// Depois
+$insStmt->execute([$userid, $username, $fullname, $lastaccess, $lastaccess]);
+```
+
+---
+
+### Problema: Plantão Dia exibindo menos analistas que 24 Horas
+
+A query de presença usava `WHERE lastaccess BETWEEN inicio AND fim`. Analistas ativos
+durante o dia mas cujo `lastaccess` ficou registrado após o fim do turno (ex: 22h)
+não apareciam no Plantão Dia (06h–18h).
+
+**Correção em `TurnosReportView.php`:**
+
+Condição alterada para sobreposição de janela — analista aparece no turno se esteve
+ativo em **qualquer momento** dentro da janela:
+
+```sql
+-- Antes (filtro restrito ao lastaccess)
+WHERE cus.lastaccess BETWEEN ? AND ?
+
+-- Depois (sobreposição: session_start <= fim E lastaccess >= inicio)
+WHERE cus.session_start <= CAST(? AS TIMESTAMP)
+  AND cus.lastaccess    >= CAST(? AS TIMESTAMP)
+```
+
+Duração calculada apenas dentro da janela do turno (não da sessão inteira):
+
+```sql
+GREATEST(
+    EXTRACT(EPOCH FROM (
+        LEAST(MAX(lastaccess), fim) - GREATEST(MIN(session_start), inicio)
+    ))::integer / 60,
+    0
+) AS online_minutes
+```
+
+---
+
+### Safety net na view
+
+`views/turnos.report.view.php`: exibe `—` quando `online_minutes <= 0`, protegendo
+contra dados legados gravados antes das correções.
+
+---
+
+### Arquivos modificados
+
+| Arquivo | Alteração |
+|---|---|
+| `scripts/cron_presence_tracker.php` | Ignora sessões obsoletas (>15min), `session_start = lastaccess` |
+| `actions/TurnosReportView.php` | Query com sobreposição de janela e duração recortada ao turno |
+| `views/turnos.report.view.php` | Exibe `—` para tempo negativo/zero |
+
+---
+
 ## [2.2.1] — Correções pós-implantação em homologação (08/05/2026)
 
 > Ambiente: `dcsaanzabbixh` — Zabbix Homologação
