@@ -625,6 +625,46 @@ MAILTO=""
   >> /var/log/presence_tracker.log 2>&1
 ```
 
+### Ajustes obrigatórios por ambiente
+
+Antes de executar, verifique dois parâmetros que variam por instalação:
+
+**1. Porta do PostgreSQL**
+
+O padrão no script é `5432`, mas o Zabbix pode usar outra porta:
+
+```bash
+grep -E "^DBPort" /etc/zabbix/zabbix_server.conf
+# Exemplo: DBPort=5433
+```
+
+Se necessário, ajuste diretamente no servidor:
+```bash
+sed -i "s|define('DB_PORT', 5432)|define('DB_PORT', 5433)|" \
+  /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php
+```
+
+**2. API Token**
+
+Preencha `ZABBIX_TOKEN` no script com o token gerado em *Administração → API tokens*:
+```bash
+nano /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php
+# define('ZABBIX_TOKEN', 'seu-token-aqui');
+```
+
+> **Atenção:** o token **não deve ser commitado** no repositório — configure-o apenas no servidor.
+
+### Armadilha: comentário `/* */` com linha de cron
+
+O cabeçalho do script usa `//` em vez de `/* */` por um motivo específico: a sequência `*/5`
+presente na linha do cron fecharia prematuramente um bloco `/* */`, causando parse error:
+
+```
+PHP Parse error: syntax error, unexpected token "*" on line 16
+```
+
+Nunca coloque exemplos de cron dentro de blocos `/* */` em scripts PHP.
+
 ### Fluxo de execução
 
 ```

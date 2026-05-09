@@ -1,5 +1,55 @@
 # Changelog
 
+## [2.2.1] — Correções pós-implantação em homologação (08/05/2026)
+
+> Ambiente: `dcsaanzabbixh` — Zabbix Homologação
+
+### Correção de syntax error no cabeçalho do script
+
+O bloco de comentário `/** ... */` continha a sequência `*/5` (linha do cron),
+que fechava o bloco prematuramente. O PHP tentava executar `5 * * * *` como código
+e retornava `Parse error: syntax error, unexpected token "*"` na linha 16.
+
+**Correção:** cabeçalho convertido de bloco `/* */` para comentários de linha `//`.
+
+```php
+// Antes (quebrado — */5 fecha o bloco):
+/**
+ *   */5 * * * * TZ="America/Sao_Paulo" ...
+ */
+
+// Depois (correto):
+//   */5 * * * * TZ="America/Sao_Paulo" ...
+```
+
+### Nota sobre DB_PORT por ambiente
+
+O `DB_PORT` no script é definido como `5432` (padrão PostgreSQL), mas ambientes
+Zabbix podem usar porta diferente. Sempre confirme antes de executar:
+
+```bash
+grep -E "^DBPort" /etc/zabbix/zabbix_server.conf
+```
+
+Ajuste direto no servidor (não versionado, pois varia por ambiente):
+
+```bash
+sed -i "s|define('DB_PORT', 5432)|define('DB_PORT', 5433)|" \
+  /usr/share/zabbix/modules/TurnosNocReport/scripts/cron_presence_tracker.php
+```
+
+### Resultado após correções
+
+```
+[2026-05-08 21:58:35] === Presence Tracker Start ===
+[2026-05-08 21:58:35] Usando API token.
+[2026-05-08 21:58:35] Total de usuários encontrados: 11
+[2026-05-08 21:58:35] Resultado: 4 inseridos, 0 atualizados.
+[2026-05-08 21:58:35] === Presence Tracker End ===
+```
+
+---
+
 ## [2.2.0] — Hardening do cron_presence_tracker (homologação)
 
 > Branch: `claude/update-cron-tracker-docs-9syjZ`
