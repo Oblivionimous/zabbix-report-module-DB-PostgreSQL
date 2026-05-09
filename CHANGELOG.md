@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.3.1] — Correção da lupa em Alertas Herdados e Sem ACK (09/05/2026)
+
+A lupa e o link do nome do problema usavam `filter_name=trigger_desc` — busca por texto
+que retornava todos os eventos com aquela descrição, não o evento específico clicado.
+
+**Correção em `views/turnos.report.view.php`:**
+
+```
+Antes:  ?filter_name=O+agente+Zabbix+não+está+disponível  → múltiplos resultados
+Depois: ?filter_eventids[]=12345                           → evento exato
+```
+
+O `eventid` já estava disponível nos dados retornados pelas queries — só não estava
+sendo utilizado nos links. Afeta tanto o link do nome do problema quanto a lupa nas
+seções **Alertas Herdados** e **Alertas Sem ACK**.
+
+---
+
 ## [2.3.0] — Correção de Presença de Analistas (09/05/2026)
 
 > Ambiente validado: `dcsaanzabbixh` — Zabbix Homologação
