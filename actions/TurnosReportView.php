@@ -92,7 +92,7 @@ class TurnosReportView extends CController {
     private function queryInheritedAlerts(\PDO $db, int $ts_start): array {
         $sql = "SELECT * FROM (
                 SELECT DISTINCT ON (e.eventid)
-                    e.eventid, e.clock, e.severity,
+                    e.eventid, e.objectid AS triggerid, e.clock, e.severity,
                     REPLACE(t.description, '{HOST.NAME}', h.name) AS trigger_desc,
                     h.host, h.name AS host_name, ($ts_start - e.clock) AS age_seconds,
                     CASE WHEN EXISTS (SELECT 1 FROM acknowledges ak WHERE ak.eventid=e.eventid) THEN 1 ELSE 0 END AS has_ack
@@ -113,7 +113,7 @@ class TurnosReportView extends CController {
     private function queryUnackedAlerts(\PDO $db, int $s, int $e): array {
         $sql = "SELECT * FROM (
                 SELECT DISTINCT ON (ev.eventid)
-                    ev.eventid, ev.clock, ev.severity,
+                    ev.eventid, ev.objectid AS triggerid, ev.clock, ev.severity,
                     REPLACE(t.description, '{HOST.NAME}', h.name) AS trigger_desc,
                     h.host, h.name AS host_name
                 FROM events ev
