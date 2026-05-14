@@ -218,10 +218,10 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
             <td class="td-mono"><?= date('d/m H:i', (int)$r['clock']) ?></td>
             <td><span class="rp-sev sev-<?= rp_sevClass((int)$r['severity']) ?>"><?= rp_sevLabel((int)$r['severity']) ?></span></td>
             <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['host']) ?>" target="_blank" class="rp-host-link"><?= htmlspecialchars($r['host']) ?> <i class="fas fa-external-link-alt"></i></a></td>
-            <td><a href="tr_events.php?triggerid=<?= $r['triggerid'] ?>&eventid=<?= $r['eventid'] ?>" target="_blank" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
+            <td><a href="#" onclick="event.stopPropagation();event.preventDefault();window.open('tr_events.php?triggerid=<?= (int)$r['triggerid'] ?>&eventid=<?= (int)$r['eventid'] ?>','_blank','noopener,noreferrer');" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
             <td class="td-bold"><?= rp_duration((int)$r['age_seconds']) ?></td>
             <td class="td-center"><?= $r['has_ack'] ? '<i class="fas fa-check-circle rp-ack-yes"></i>' : '<i class="fas fa-times-circle rp-ack-no"></i>' ?></td>
-            <td class="td-center"><a href="tr_events.php?triggerid=<?= $r['triggerid'] ?>&eventid=<?= $r['eventid'] ?>" target="_blank" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
+            <td class="td-center"><a href="#" onclick="event.stopPropagation();event.preventDefault();window.open('tr_events.php?triggerid=<?= (int)$r['triggerid'] ?>&eventid=<?= (int)$r['eventid'] ?>','_blank','noopener,noreferrer');" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
         </tr>
         <?php endforeach; ?>
         </tbody></table>
@@ -240,8 +240,8 @@ $pview_base = "zabbix.php?action=problem.view&filter_set=1&filter_show=3&from=".
             <td class="td-mono"><?= date('H:i:s', (int)$r['clock']) ?></td>
             <td><span class="rp-sev sev-<?= rp_sevClass((int)$r['severity']) ?>"><?= rp_sevLabel((int)$r['severity']) ?></span></td>
             <td><a href="zabbix.php?action=problem.view&filter_set=1&filter_show=3&filter_name=<?= urlencode($r['host']) ?>" target="_blank" class="rp-host-link"><?= htmlspecialchars($r['host']) ?></a></td>
-            <td><a href="tr_events.php?triggerid=<?= $r['triggerid'] ?>&eventid=<?= $r['eventid'] ?>" target="_blank" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
-            <td class="td-center"><a href="tr_events.php?triggerid=<?= $r['triggerid'] ?>&eventid=<?= $r['eventid'] ?>" target="_blank" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
+            <td><a href="#" onclick="event.stopPropagation();event.preventDefault();window.open('tr_events.php?triggerid=<?= (int)$r['triggerid'] ?>&eventid=<?= (int)$r['eventid'] ?>','_blank','noopener,noreferrer');" class="rp-trigger-link"><?= htmlspecialchars($r['trigger_desc']) ?></a></td>
+            <td class="td-center"><a href="#" onclick="event.stopPropagation();event.preventDefault();window.open('tr_events.php?triggerid=<?= (int)$r['triggerid'] ?>&eventid=<?= (int)$r['eventid'] ?>','_blank','noopener,noreferrer');" class="rp-action" title="Ver no Zabbix"><i class="fas fa-search"></i></a></td>
         </tr>
         <?php endforeach; ?>
         </tbody></table>
