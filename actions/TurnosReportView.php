@@ -208,11 +208,18 @@ class TurnosReportView extends CController {
 
     private function queryMttaTimeline(\PDO $db, int $s, int $e): array {
         $tzOffset = date('Z');
-        $sql = "SELECT TO_CHAR(TO_TIMESTAMP(ev.clock + $tzOffset), 'HH24') AS hora,
-                ROUND(AVG(a.clock - ev.clock)::numeric, 0) AS avg_mtta
-            FROM acknowledges a INNER JOIN events ev ON ev.eventid=a.eventid
-            WHERE ev.source=0 AND ev.object=0 AND ev.clock BETWEEN $s AND $e
-              AND a.acknowledgeid=(SELECT MIN(a2.acknowledgeid) FROM acknowledges a2 WHERE a2.eventid=a.eventid)
+        // Agrupa pelo horário do ACK (não do evento) para mostrar quando a equipe respondeu.
+        // a.clock BETWEEN $s AND $e garante apenas horas dentro da janela do turno.
+        // GREATEST(ev.clock, $s) limita o MTTA de alertas herdados ao início do turno,
+        // evitando que a idade histórica do evento distorça o gráfico.
+        // AT TIME ZONE 'UTC' previne dupla conversão quando o PostgreSQL não está em UTC.
+        $sql = "SELECT TO_CHAR(TO_TIMESTAMP(a.clock + $tzOffset) AT TIME ZONE 'UTC', 'HH24') AS hora,
+                ROUND(AVG(a.clock - GREATEST(ev.clock, $s))::numeric, 0) AS avg_mtta
+            FROM acknowledges a
+            INNER JOIN events ev ON ev.eventid = a.eventid
+            WHERE ev.source = 0 AND ev.object = 0
+              AND a.clock BETWEEN $s AND $e
+              AND a.acknowledgeid = (SELECT MIN(a2.acknowledgeid) FROM acknowledges a2 WHERE a2.eventid = a.eventid)
             GROUP BY hora ORDER BY hora ASC";
         return $db->query($sql)->fetchAll();
     }
