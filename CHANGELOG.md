@@ -1,5 +1,64 @@
 # Changelog
 
+## [2.4.0] — Correção do MTTA por Hora e lupa de eventos (09/05/2026)
+
+### Correção do gráfico MTTA por Hora
+
+Três problemas corrigidos em `queryMttaTimeline` (`TurnosReportView.php`):
+
+**1. Horas exibidas fora da janela do turno**
+A query agrupava pelo horário do *evento* (`ev.clock`). Um alerta que disparou às 04h
+mas foi reconhecido às 10h aparecia no bucket `04`, fora da janela do Plantão Dia (06h–18h).
+
+**Correção:** agrupa pelo horário do *ACK* (`a.clock`) com filtro `a.clock BETWEEN $s AND $e` —
+mostra quando a equipe efetivamente respondeu, apenas dentro da janela do turno.
+
+**2. MTTA inflado por alertas herdados (ex: 4.166 minutos)**
+`AVG(a.clock - ev.clock)` sem limite incluía a idade histórica completa de alertas herdados
+de turnos anteriores, distorcendo completamente o gráfico.
+
+**Correção:** `GREATEST(ev.clock, $s)` limita o cálculo ao início do turno. Para alertas
+herdados, o MTTA mede a partir do início do turno atual, não da criação original do evento.
+
+**3. Dupla conversão de timezone**
+`TO_TIMESTAMP(clock + tzOffset)` sem `AT TIME ZONE 'UTC'` causava dupla subtração de fuso
+quando o PostgreSQL não está configurado em UTC, deslocando as horas exibidas.
+
+**Correção:** adicionado `AT TIME ZONE 'UTC'` para forçar exibição correta independente
+da timezone do PostgreSQL.
+
+---
+
+### Correção definitiva da lupa de eventos
+
+A correção anterior (2.3.1) usava `filter_eventids[]` como parâmetro de URL, que no
+Zabbix 7.x é ignorado pelo frontend — ele carrega o filtro salvo na sessão do usuário,
+levando a alertas aleatórios.
+
+**Correção:** substituído por `tr_events.php?triggerid={triggerid}&eventid={eventid}`,
+página nativa do Zabbix que abre diretamente o histórico do trigger no evento exato,
+sem interferência de filtro de sessão.
+
+`triggerid` adicionado ao `SELECT` das queries `queryInheritedAlerts` e
+`queryUnackedAlerts` via `e.objectid AS triggerid` (em eventos de trigger,
+`object=0` e `objectid` é sempre o `triggerid`).
+
+```
+Antes:  ?filter_eventids[]=12345      → Zabbix ignora, abre filtro da sessão
+Depois: tr_events.php?triggerid=X&eventid=12345  → evento exato, sem filtro
+```
+
+---
+
+### Arquivos modificados
+
+| Arquivo | Alteração |
+|---|---|
+| `actions/TurnosReportView.php` | `queryMttaTimeline` corrigida (3 problemas); `triggerid` adicionado ao SELECT das queries de alertas |
+| `views/turnos.report.view.php` | Lupa e link do problema usam `tr_events.php` |
+
+---
+
 ## [2.3.1] — Correção da lupa em Alertas Herdados e Sem ACK (09/05/2026)
 
 A lupa e o link do nome do problema usavam `filter_name=trigger_desc` — busca por texto
